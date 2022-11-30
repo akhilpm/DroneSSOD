@@ -200,17 +200,16 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
         # Divide into labeled and unlabeled sets according to supervision percentage
         label_dicts, unlabel_dicts = divide_label_unlabel(
             dataset_dicts,
-            cfg.DATALOADER.SUP_PERCENT,
-            cfg.DATALOADER.RANDOM_DATA_SEED,
-            cfg.DATALOADER.RANDOM_DATA_SEED_PATH,
+            cfg.DATALOADER.SUP_PERCENT
         )
 
     label_dataset = DatasetFromList(label_dicts, copy=False)
-    # exclude the labeled set from unlabeled dataset
     unlabel_dataset = DatasetFromList(unlabel_dicts, copy=False)
-    # include the labeled set in unlabel dataset
-    # unlabel_dataset = DatasetFromList(dataset_dicts, copy=False)
 
+    if cfg.CROPTRAIN.USE_CROPS:
+        mapper = DatasetMapperDensityCrop(cfg, True)
+    if "dota" in cfg.DATASETS.TRAIN[0] or "dota" in cfg.DATASETS.TEST[0]:
+        mapper = DatasetMapperDensityCrop(cfg, True)
     if mapper is None:
         mapper = DatasetMapper(cfg, True)
     label_dataset = MapDataset(label_dataset, mapper)
@@ -226,6 +225,11 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
         raise NotImplementedError("{} not yet supported.".format(sampler_name))
     else:
         raise ValueError("Unknown training sampler: {}".format(sampler_name))
+
+    # list num of labeled and unlabeled
+    logger.info("Number of LABELED training samples " + str(len(label_dataset)))
+    logger.info("Number of UNLABELED training samples " + str(len(unlabel_dataset)))
+    logger.info("Supervision percentage " + str(cfg.DATALOADER.SUP_PERCENT))
     return build_semisup_batch_data_loader_two_crop(
         (label_dataset, unlabel_dataset),
         (label_sampler, unlabel_sampler),

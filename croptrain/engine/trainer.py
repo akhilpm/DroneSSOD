@@ -456,8 +456,11 @@ class UBTeacherTrainer(DefaultTrainer):
         evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
 
         if evaluator_type == "coco":
-            evaluator_list.append(COCOEvaluator(
-                dataset_name, output_dir=output_folder))
+            evaluator= COCOEvaluator(dataset_name, output_dir=output_folder)
+            #ignore the last "others" class
+            if "visdrone" in dataset_name:
+                evaluator._coco_api.dataset['categories'] = evaluator._coco_api.dataset['categories'][:-1]
+            evaluator_list.append(evaluator)
         elif evaluator_type == "pascal_voc":
             return PascalVOCDetectionEvaluator(dataset_name)
         if len(evaluator_list) == 0:
@@ -585,20 +588,20 @@ class UBTeacherTrainer(DefaultTrainer):
         data = next(self._trainer._data_loader_iter)
         # data_q and data_k from different augmentations (q:strong, k:weak)
         # label_strong, label_weak, unlabed_strong, unlabled_weak
-        label_data_q, label_data_k, unlabel_data_q, unlabel_data_k = data
+        label_data_s, label_data_w, unlabel_data_s, unlabel_data_w = data
         data_time = time.perf_counter() - start
 
         # remove unlabeled data labels
-        unlabel_data_q = self.remove_label(unlabel_data_q)
-        unlabel_data_k = self.remove_label(unlabel_data_k)
+        unlabel_data_s = self.remove_label(unlabel_data_s)
+        unlabel_data_w = self.remove_label(unlabel_data_w)
 
         # burn-in stage (supervised training with labeled data)
         if self.iter < self.cfg.SEMISUPNET.BURN_UP_STEP:
 
             # input both strong and weak supervised data into model
-            label_data_q.extend(label_data_k)
+            label_data_s.extend(label_data_w)
             record_dict, _, _, _ = self.model(
-                label_data_q, branch="supervised")
+                label_data_s, branch="supervised")
 
             # weight losses
             loss_dict = {}
@@ -625,40 +628,37 @@ class UBTeacherTrainer(DefaultTrainer):
             with torch.no_grad():
                 (
                     _,
-                    proposals_rpn_unsup_k,
-                    proposals_roih_unsup_k,
+                    proposals_rpn_unsup_w,
+                    proposals_roih_unsup_w,
                     _,
-                ) = self.model_teacher(unlabel_data_k, branch="unsup_data_weak")
+                ) = self.model_teacher(unlabel_data_w, branch="unsup_data_weak")
 
             #  Pseudo-labeling
             cur_threshold = self.cfg.SEMISUPNET.BBOX_THRESHOLD
 
             joint_proposal_dict = {}
-            joint_proposal_dict["proposals_rpn"] = proposals_rpn_unsup_k
-            (
-                pesudo_proposals_rpn_unsup_k,
-                nun_pseudo_bbox_rpn,
-            ) = self.process_pseudo_label(
-                proposals_rpn_unsup_k, cur_threshold, "rpn", "thresholding"
+            joint_proposal_dict["proposals_rpn"] = proposals_rpn_unsup_w
+            pesudo_proposals_rpn_unsup_w, _ = self.process_pseudo_label(
+                proposals_rpn_unsup_w, cur_threshold, "rpn", "thresholding"
             )
-            joint_proposal_dict["proposals_pseudo_rpn"] = pesudo_proposals_rpn_unsup_k
+            joint_proposal_dict["proposals_pseudo_rpn"] = pesudo_proposals_rpn_unsup_w
             # Pseudo_labeling for ROI head (bbox location/objectness)
-            pesudo_proposals_roih_unsup_k, _ = self.process_pseudo_label(
-                proposals_roih_unsup_k, cur_threshold, "roih", "thresholding"
+            pesudo_proposals_roih_unsup_w, _ = self.process_pseudo_label(
+                proposals_roih_unsup_w, cur_threshold, "roih", "thresholding"
             )
-            joint_proposal_dict["proposals_pseudo_roih"] = pesudo_proposals_roih_unsup_k
+            joint_proposal_dict["proposals_pseudo_roih"] = pesudo_proposals_roih_unsup_w
 
             #  add pseudo-label to unlabeled data
 
-            unlabel_data_q = self.add_label(
-                unlabel_data_q, joint_proposal_dict["proposals_pseudo_roih"]
+            unlabel_data_s = self.add_label(
+                unlabel_data_s, joint_proposal_dict["proposals_pseudo_roih"]
             )
-            unlabel_data_k = self.add_label(
-                unlabel_data_k, joint_proposal_dict["proposals_pseudo_roih"]
+            unlabel_data_w = self.add_label(
+                unlabel_data_w, joint_proposal_dict["proposals_pseudo_roih"]
             )
 
-            all_label_data = label_data_q + label_data_k
-            all_unlabel_data = unlabel_data_q
+            all_label_data = label_data_s + label_data_w
+            all_unlabel_data = unlabel_data_s
 
             record_all_label_data, _, _, _ = self.model(
                 all_label_data, branch="supervised"
@@ -805,7 +805,16 @@ class UBTeacherTrainer(DefaultTrainer):
             )
 
         def test_and_save_results_student():
-            self._last_eval_results_student = self.test(self.cfg, self.model)
+            if cfg.CROPTRAIN.USE_CROPS:
+                if "dota" in cfg.DATASETS.TEST[0]:
+                    self._last_eval_results_student = self.test_sliding_window_patches(self.cfg, self.model, self.iter)
+                else:
+                    self._last_eval_results_student = self.test_crop(self.cfg, self.model, self.iter)
+            else:
+                if "dota" in cfg.DATASETS.TEST[0]:
+                    self._last_eval_results_student = self.test_sliding_window_patches(self.cfg, self.model, self.iter)
+                else:
+                    self._last_eval_results_student = self.test(self.cfg, self.model)
             _last_eval_results_student = {
                 k + "_student": self._last_eval_results_student[k]
                 for k in self._last_eval_results_student.keys()
@@ -813,8 +822,16 @@ class UBTeacherTrainer(DefaultTrainer):
             return _last_eval_results_student
 
         def test_and_save_results_teacher():
-            self._last_eval_results_teacher = self.test(
-                self.cfg, self.model_teacher)
+            if cfg.CROPTRAIN.USE_CROPS:
+                if "dota" in cfg.DATASETS.TEST[0]:
+                    self._last_eval_results_teacher = self.test_sliding_window_patches(self.cfg, self.model_teacher, self.iter)
+                else:
+                    self._last_eval_results_teacher = self.test_crop(self.cfg, self.model_teacher, self.iter)
+            else:
+                if "dota" in cfg.DATASETS.TEST[0]:
+                    self._last_eval_results_teacher = self.test_sliding_window_patches(self.cfg, self.model_teacher, self.iter)
+                else:
+                    self._last_eval_results_teacher = self.test(self.cfg, self.model_teacher)
             return self._last_eval_results_teacher
 
         ret.append(hooks.EvalHook(cfg.TEST.EVAL_PERIOD,
