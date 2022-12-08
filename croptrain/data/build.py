@@ -24,7 +24,7 @@ from detectron2.data.build import (
 from croptrain.data.common import (
     AspectRatioGroupedSemiSupDatasetTwoCrop,
 )
-
+from croptrain.data.dataset_mapper import DatasetMapperTwoCropSeparate
 from croptrain.data.dataset_mapper import DatasetMapperDensityCrop
 
 
@@ -100,7 +100,7 @@ def build_detection_semisup_train_loader(cfg, mapper=None):
         raise ValueError("Unknown training sampler: {}".format(sampler_name))
 
     # list num of labeled and unlabeled
-    logger.info("Number of training samples " + str(len(dataset)))
+    logger.info(" Number of training samples " + str(len(dataset)))
     logger.info("Supervision percentage " + str(cfg.DATALOADER.SUP_PERCENT))
 
     return build_batch_data_loader(
@@ -205,13 +205,13 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
 
     label_dataset = DatasetFromList(label_dicts, copy=False)
     unlabel_dataset = DatasetFromList(unlabel_dicts, copy=False)
-
-    if cfg.CROPTRAIN.USE_CROPS:
-        mapper = DatasetMapperDensityCrop(cfg, True)
-    if "dota" in cfg.DATASETS.TRAIN[0] or "dota" in cfg.DATASETS.TEST[0]:
-        mapper = DatasetMapperDensityCrop(cfg, True)
     if mapper is None:
-        mapper = DatasetMapper(cfg, True)
+        if cfg.CROPTRAIN.USE_CROPS:
+            mapper = DatasetMapperTwoCropSeparate(cfg, True)
+        else:
+            mapper = DatasetMapper(cfg, True)
+        if "dota" in cfg.DATASETS.TRAIN[0] or "dota" in cfg.DATASETS.TEST[0]:
+            mapper = DatasetMapperTwoCropSeparate(cfg, True)
     label_dataset = MapDataset(label_dataset, mapper)
     unlabel_dataset = MapDataset(unlabel_dataset, mapper)
 
@@ -227,8 +227,8 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
         raise ValueError("Unknown training sampler: {}".format(sampler_name))
 
     # list num of labeled and unlabeled
-    logger.info("Number of LABELED training samples " + str(len(label_dataset)))
-    logger.info("Number of UNLABELED training samples " + str(len(unlabel_dataset)))
+    logger.info("Number of LABELED training samples " + str(len(label_dataset)))
+    logger.info("Number of UNLABELED training samples " + str(len(unlabel_dataset)))
     logger.info("Supervision percentage " + str(cfg.DATALOADER.SUP_PERCENT))
     return build_semisup_batch_data_loader_two_crop(
         (label_dataset, unlabel_dataset),

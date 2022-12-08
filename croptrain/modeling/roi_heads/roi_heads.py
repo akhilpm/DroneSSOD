@@ -43,10 +43,7 @@ class StandardROIHeadsPseudoLab(StandardROIHeads):
             pooler_type=pooler_type,
         )
         box_head = build_box_head(
-            cfg,
-            ShapeSpec(
-                channels=in_channels, height=pooler_resolution, width=pooler_resolution
-            ),
+            cfg, ShapeSpec(channels=in_channels, height=pooler_resolution, width=pooler_resolution),
         )
         if cfg.MODEL.ROI_HEADS.LOSS == "CrossEntropy":
             box_predictor = FastRCNNOutputLayers(cfg, box_head.output_shape)
@@ -97,10 +94,7 @@ class StandardROIHeadsPseudoLab(StandardROIHeads):
             )
             return proposals, losses
         else:
-            pred_instances, predictions = self._forward_box(
-                features, proposals, compute_loss, compute_val_loss, branch
-            )
-
+            pred_instances, predictions = self._forward_box(features, proposals, compute_loss, compute_val_loss, branch)
             return pred_instances, predictions
 
     def _forward_box(

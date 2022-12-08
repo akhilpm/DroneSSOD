@@ -21,17 +21,15 @@ from detectron2.utils.events import EventStorage
 from detectron2.evaluation import COCOEvaluator, verify_results, PascalVOCDetectionEvaluator, DatasetEvaluators
 from detectron2.data.dataset_mapper import DatasetMapper
 from detectron2.engine import hooks
-from detectron2.structures.boxes import Boxes, pairwise_iou
+from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
 from detectron2.utils.env import TORCH_VERSION
 from detectron2.data import MetadataCatalog
 from detectron2.evaluation import DatasetEvaluator, print_csv_format
-from detectron2.utils.logger import log_every_n_seconds
 from contextlib import ExitStack, contextmanager
 from croptrain.data.detection_utils import read_image
 from utils.plot_utils import plot_detections
 from croptrain.engine.inference import inference_with_crops
-from detectron2.evaluation import inference_on_dataset
 from croptrain.data.build import (
     build_detection_semisup_train_loader,
     build_detection_test_loader,
@@ -235,13 +233,10 @@ class BaselineTrainer(DefaultTrainer):
 
         def test_and_save_results():
             if cfg.CROPTRAIN.USE_CROPS:
-                if "dota" in cfg.DATASETS.TEST[0]:
-                    self._last_eval_results = self.test_sliding_window_patches(self.cfg, self.model, self.iter)
-                else:
-                    self._last_eval_results = self.test_crop(self.cfg, self.model, self.iter)
+                self._last_eval_results = self.test_crop(self.cfg, self.model, self.iter)
             else:
                 if "dota" in cfg.DATASETS.TEST[0]:
-                    self._last_eval_results = self.test_sliding_window_patches(self.cfg, self.model, self.iter)
+                    self._last_eval_results = self.test_crop(self.cfg, self.model, self.iter)
                 else:
                     self._last_eval_results = self.test(self.cfg, self.model)
             return self._last_eval_results
@@ -279,49 +274,10 @@ class BaselineTrainer(DefaultTrainer):
                     )
                     results[dataset_name] = {}
                     continue
-            results_i = inference_with_crops(model, data_loader, evaluator, cfg, iter)
-            results[dataset_name] = results_i
-            if comm.is_main_process():
-                assert isinstance(
-                    results_i, dict
-                ), "Evaluator must return a dict on the main process. Got {} instead.".format(
-                    results_i
-                )
-                logger.info("Evaluation results for {} in csv format:".format(dataset_name))
-                print_csv_format(results_i)
-
-        if len(results) == 1:
-            results = list(results.values())[0] 
-        return results
-
-
-    @classmethod
-    def test_sliding_window_patches(cls, cfg, model, iter, evaluators=None):
-        logger = logging.getLogger(__name__)
-        if isinstance(evaluators, DatasetEvaluator):
-            evaluators = [evaluators]
-        if evaluators is not None:
-            assert len(cfg.DATASETS.TEST) == len(evaluators), "{} != {}".format(
-                len(cfg.DATASETS.TEST), len(evaluators)
-            )
-
-        results = OrderedDict()
-        for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
-            data_loader = cls.build_test_loader(cfg, dataset_name)
-
-            if evaluators is not None:
-                evaluator = evaluators[idx]
-            else:
-                try:
-                    evaluator = cls.build_evaluator(cfg, dataset_name)
-                except NotImplementedError:
-                    logger.warn(
-                        "No evaluator found. Use `DefaultTrainer.test(evaluators=)`, "
-                        "or implement its `build_evaluator` method."
-                    )
-                    results[dataset_name] = {}
-                    continue
-            results_i = inference_dota(model, data_loader, evaluator, cfg, iter)
+            if "dota" in cfg.DATASETS.TEST[0]:
+                results_i = inference_dota(model, data_loader, evaluator, cfg, iter)
+            else:    
+                results_i = inference_with_crops(model, data_loader, evaluator, cfg, iter)
             results[dataset_name] = results_i
             if comm.is_main_process():
                 assert isinstance(
@@ -444,8 +400,8 @@ class UBTeacherTrainer(DefaultTrainer):
         if isinstance(self.model, DistributedDataParallel):
             # broadcast loaded data/model from the first rank, because other
             # machines may not have access to the checkpoint file
-            if TORCH_VERSION >= (1, 7):
-                self.model._sync_params_and_buffers()
+            #if TORCH_VERSION >= (1, 7):
+            #    self.model._sync_params_and_buffers()
             self.start_iter = comm.all_gather(self.start_iter)[0]
 
     @classmethod
@@ -548,9 +504,7 @@ class UBTeacherTrainer(DefaultTrainer):
 
         return new_proposal_inst
 
-    def process_pseudo_label(
-        self, proposals_rpn_unsup_k, cur_threshold, proposal_type, psedo_label_method=""
-    ):
+    def process_pseudo_label(self, proposals_rpn_unsup_k, cur_threshold, proposal_type, psedo_label_method=""):
         list_instances = []
         num_proposal_output = 0.0
         for proposal_bbox_inst in proposals_rpn_unsup_k:
@@ -806,13 +760,10 @@ class UBTeacherTrainer(DefaultTrainer):
 
         def test_and_save_results_student():
             if cfg.CROPTRAIN.USE_CROPS:
-                if "dota" in cfg.DATASETS.TEST[0]:
-                    self._last_eval_results_student = self.test_sliding_window_patches(self.cfg, self.model, self.iter)
-                else:
-                    self._last_eval_results_student = self.test_crop(self.cfg, self.model, self.iter)
+                self._last_eval_results_student = self.test_crop(self.cfg, self.model, self.iter)
             else:
                 if "dota" in cfg.DATASETS.TEST[0]:
-                    self._last_eval_results_student = self.test_sliding_window_patches(self.cfg, self.model, self.iter)
+                    self._last_eval_results_student = self.test_crop(self.cfg, self.model, self.iter)
                 else:
                     self._last_eval_results_student = self.test(self.cfg, self.model)
             _last_eval_results_student = {
@@ -823,13 +774,10 @@ class UBTeacherTrainer(DefaultTrainer):
 
         def test_and_save_results_teacher():
             if cfg.CROPTRAIN.USE_CROPS:
-                if "dota" in cfg.DATASETS.TEST[0]:
-                    self._last_eval_results_teacher = self.test_sliding_window_patches(self.cfg, self.model_teacher, self.iter)
-                else:
-                    self._last_eval_results_teacher = self.test_crop(self.cfg, self.model_teacher, self.iter)
+                self._last_eval_results_teacher = self.test_crop(self.cfg, self.model_teacher, self.iter)
             else:
                 if "dota" in cfg.DATASETS.TEST[0]:
-                    self._last_eval_results_teacher = self.test_sliding_window_patches(self.cfg, self.model_teacher, self.iter)
+                    self._last_eval_results_teacher = self.test_crop(self.cfg, self.model_teacher, self.iter)
                 else:
                     self._last_eval_results_teacher = self.test(self.cfg, self.model_teacher)
             return self._last_eval_results_teacher
@@ -845,3 +793,46 @@ class UBTeacherTrainer(DefaultTrainer):
         return ret
 
 
+    @classmethod
+    def test_crop(cls, cfg, model, iter, evaluators=None):
+        logger = logging.getLogger(__name__)
+        if isinstance(evaluators, DatasetEvaluator):
+            evaluators = [evaluators]
+        if evaluators is not None:
+            assert len(cfg.DATASETS.TEST) == len(evaluators), "{} != {}".format(
+                len(cfg.DATASETS.TEST), len(evaluators)
+            )
+
+        results = OrderedDict()
+        for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
+            data_loader = cls.build_test_loader(cfg, dataset_name)
+
+            if evaluators is not None:
+                evaluator = evaluators[idx]
+            else:
+                try:
+                    evaluator = cls.build_evaluator(cfg, dataset_name)
+                except NotImplementedError:
+                    logger.warn(
+                        "No evaluator found. Use `DefaultTrainer.test(evaluators=)`, "
+                        "or implement its `build_evaluator` method."
+                    )
+                    results[dataset_name] = {}
+                    continue
+            if "dota" in cfg.DATASETS.TEST[0]:
+                results_i = inference_dota(model, data_loader, evaluator, cfg, iter)
+            else:
+                results_i = inference_with_crops(model, data_loader, evaluator, cfg, iter)
+            results[dataset_name] = results_i
+            if comm.is_main_process():
+                assert isinstance(
+                    results_i, dict
+                ), "Evaluator must return a dict on the main process. Got {} instead.".format(
+                    results_i
+                )
+                logger.info("Evaluation results for {} in csv format:".format(dataset_name))
+                print_csv_format(results_i)
+
+        if len(results) == 1:
+            results = list(results.values())[0] 
+        return results

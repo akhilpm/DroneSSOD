@@ -69,7 +69,6 @@ def infer_on_image_and_crops(input_dicts, cluster_dicts, model, cfg):
     images_original = model.preprocess_image(input_dicts)
     features_original = model.backbone(images_original.tensor)
     proposals_original, _ = model.proposal_generator(images_original, features_original, None)
-    image_shapes = [(item.get("height"), item.get("width")) for item in input_dicts]
     #get detections from full image and project it to original image size
     boxes, scores = get_box_predictions(model, features_original, proposals_original)
     num_bbox_reg_classes = boxes[0].shape[1] // 4
@@ -87,9 +86,7 @@ def infer_on_image_and_crops(input_dicts, cluster_dicts, model, cfg):
             boxes_crop = project_boxes_to_image(cluster_dict, images_crop.image_sizes[0], boxes_crop[0])
             boxes[0] = torch.cat([boxes[0], boxes_crop], dim=0)
             scores[0] = torch.cat([scores[0], scores_crop[0]], dim=0)
-    pred_instances, _ = fast_rcnn_inference(boxes, scores, image_shapes, cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST, \
-        cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST, cfg.CROPTEST.DETECTIONS_PER_IMAGE)
-    return pred_instances[0]
+    return boxes, scores
 
 
 def inference_with_crops(model, data_loader, evaluator, cfg, iter):
@@ -135,7 +132,8 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
                 total_eval_time = 0
 
             start_compute_time = time.perf_counter()
-            outputs = model.inference(batched_inputs=inputs)
+            image_shapes = [(item.get("height"), item.get("width")) for item in inputs]
+            outputs = model(inputs)
             cluster_class_indices = (outputs[0]["instances"].pred_classes==cluster_class)
             cluster_boxes = outputs[0]["instances"][cluster_class_indices]
             cluster_boxes = cluster_boxes[cluster_boxes.scores>0.7]
@@ -146,10 +144,15 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
             if len(cluster_boxes)!=0:
                 #cluster_boxes = merge_cluster_boxes(cluster_boxes, cfg)
                 cluster_dicts = get_dict_from_crops(cluster_boxes, inputs[0], cfg.CROPTEST.CROPSIZE)
-                pred_instances = infer_on_image_and_crops(inputs, cluster_dicts, model, cfg)
+                boxes, scores = infer_on_image_and_crops(inputs, cluster_dicts, model, cfg)
+                #boxes, scores = model(inputs, cluster_dicts, infer_on_crops=True)
             else:
-                pred_instances = infer_on_image_and_crops(inputs, None, model, cfg)
-            pred_instances = pred_instances[pred_instances.pred_classes!=cluster_class]                                
+                boxes, scores = infer_on_image_and_crops(inputs, None, model, cfg)
+                #boxes, scores = model(inputs, None, infer_on_crops=True)
+            pred_instances, _ = fast_rcnn_inference(boxes, scores, image_shapes, cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST, \
+                                    cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST, cfg.CROPTEST.DETECTIONS_PER_IMAGE)
+            pred_instances = pred_instances[0]
+            pred_instances = pred_instances[pred_instances.pred_classes!=cluster_class]
             all_outputs = [{"instances": pred_instances}]
             
             #if idx%100==0:

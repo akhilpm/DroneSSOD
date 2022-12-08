@@ -3,23 +3,46 @@ import torch
 from detectron2.modeling.meta_arch.build import META_ARCH_REGISTRY
 from detectron2.modeling.meta_arch.rcnn import GeneralizedRCNN
 from detectron2.structures.boxes import Boxes
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+from detectron2.utils.events import get_event_storage
+from detectron2.structures import Instances
 
 @META_ARCH_REGISTRY.register()
-class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
-    def forward(
-        self, batched_inputs, branch="supervised", given_proposals=None, val_mode=False,
+class CropRCNN(GeneralizedRCNN):
+
+    def forward(self, batched_inputs: List[Dict[str, torch.Tensor]], 
         cluster_inputs: Optional[List[Dict[str, torch.Tensor]]] = None,
         infer_on_crops: bool = False,
     ):
-        if (not self.training) and (not val_mode):
+        """
+        Args:
+            batched_inputs: a list, batched outputs of :class:`DatasetMapper` .
+                Each item in the list contains the inputs for one image.
+                For now, each item in the list is a dict that contains:
+
+                * image: Tensor, image in (C, H, W) format.
+                * instances (optional): groundtruth :class:`Instances`
+                * proposals (optional): :class:`Instances`, precomputed proposals.
+
+                Other information that's included in the original dicts, such as:
+
+                * "height", "width" (int): the output resolution of the model, used in inference.
+                  See :meth:`postprocess` for details.
+
+        Returns:
+            list[dict]:
+                Each dict is the output for one input image.
+                The dict contains one key "instances" whose value is a :class:`Instances`.
+                The :class:`Instances` object has the following keys:
+                "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
+        """
+        if not self.training:
             if infer_on_crops:
                 return self.infer_on_image_and_crops(batched_inputs, cluster_inputs)
             else:    
                 return self.inference(batched_inputs)
 
         images = self.preprocess_image(batched_inputs)
-
         if "instances" in batched_inputs[0]:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
         else:
@@ -27,61 +50,24 @@ class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
 
         features = self.backbone(images.tensor)
 
-        if branch == "supervised":
-            # Region proposal network
-            proposals_rpn, proposal_losses = self.proposal_generator(
-                images, features, gt_instances
-            )
+        if self.proposal_generator is not None:
+            proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
+        else:
+            assert "proposals" in batched_inputs[0]
+            proposals = [x["proposals"].to(self.device) for x in batched_inputs]
+            proposal_losses = {}
 
-            # # roi_head lower branch
-            _, detector_losses = self.roi_heads(
-                images, features, proposals_rpn, gt_instances, branch=branch
-            )
+        _, detector_losses = self.roi_heads(images, features, proposals, gt_instances)
+        if self.vis_period > 0:
+            storage = get_event_storage()
+            if storage.iter % self.vis_period == 0:
+                self.visualize_training(batched_inputs, proposals)
 
-            losses = {}
-            losses.update(detector_losses)
-            losses.update(proposal_losses)
-            return losses, [], [], None
+        losses = {}
+        losses.update(detector_losses)
+        losses.update(proposal_losses)
+        return losses
 
-        elif branch == "unsup_data_weak":
-            # Region proposal network
-            proposals_rpn, _ = self.proposal_generator(
-                images, features, None, compute_loss=False
-            )
-
-            # roi_head lower branch (keep this for further production)  # notice that we do not use any target in ROI head to do inference !
-            proposals_roih, ROI_predictions = self.roi_heads(
-                images,
-                features,
-                proposals_rpn,
-                targets=None,
-                compute_loss=False,
-                branch=branch,
-            )
-
-            return {}, proposals_rpn, proposals_roih, ROI_predictions
-
-        elif branch == "val_loss":
-
-            # Region proposal network
-            proposals_rpn, proposal_losses = self.proposal_generator(
-                images, features, gt_instances, compute_val_loss=True
-            )
-
-            # roi_head lower branch
-            _, detector_losses = self.roi_heads(
-                images,
-                features,
-                proposals_rpn,
-                gt_instances,
-                branch=branch,
-                compute_val_loss=True,
-            )
-
-            losses = {}
-            losses.update(detector_losses)
-            losses.update(proposal_losses)
-            return losses, [], [], None
 
     def get_box_predictions(self, features, proposals):
         features = [features[f] for f in self.roi_heads.box_in_features]
@@ -95,6 +81,7 @@ class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
 
     def infer_on_image_and_crops(self, input_dicts, cluster_dicts):
         assert len(input_dicts)==1, "Only one image per inference is supported!"
+        assert not self.training
         images_original = self.preprocess_image(input_dicts)
         features_original = self.backbone(images_original.tensor)
         proposals_original, _ = self.proposal_generator(images_original, features_original, None)

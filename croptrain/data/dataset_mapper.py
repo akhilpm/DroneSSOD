@@ -70,17 +70,17 @@ class DatasetMapperTwoCropSeparate(DatasetMapper):
         Returns:
             dict: a format that builtin models in detectron2 accept
         """
-        dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
+        dataset_dict_strong = copy.deepcopy(dataset_dict)  # it will be modified by code below
         #image = utils.read_image(dataset_dict["file_name"], format=self.img_format)
-        image = read_image(dataset_dict)
-        utils.check_image_size(dataset_dict, image)
+        image = read_image(dataset_dict_strong)
+        utils.check_image_size(dataset_dict_strong, image)
 
         aug_input = T.StandardAugInput(image, sem_seg=None)
-        if dataset_dict['full_image']:
+        if dataset_dict_strong['full_image']:
             transforms = self.augmentations(aug_input)
         else:
             if "dota" in self.cfg.DATASETS.TRAIN[0]  or "dota" in self.cfg.DATASETS.TEST[0]:
-                if dataset_dict["two_stage_crop"]:
+                if dataset_dict_strong["two_stage_crop"]:
                     transforms = self.augmentations_crop(aug_input)
                 else:
                     transforms = self.augmentations(aug_input)
@@ -90,11 +90,11 @@ class DatasetMapperTwoCropSeparate(DatasetMapper):
         image_shape = image_weak_aug.shape[:2] # h, w
 
         if sem_seg_gt is not None:
-            dataset_dict["sem_seg"] = torch.as_tensor(sem_seg_gt.astype("long"))
+            dataset_dict_strong["sem_seg"] = torch.as_tensor(sem_seg_gt.astype("long"))
 
         if self.load_proposals:
             utils.transform_proposals(
-                dataset_dict,
+                dataset_dict_strong,
                 image_shape,
                 transforms,
                 proposal_topk=self.proposal_topk,
@@ -102,12 +102,12 @@ class DatasetMapperTwoCropSeparate(DatasetMapper):
             )
 
         if not self.is_train:
-            dataset_dict.pop("annotations", None)
-            dataset_dict.pop("sem_seg_file_name", None)
-            return dataset_dict
+            dataset_dict_strong.pop("annotations", None)
+            dataset_dict_strong.pop("sem_seg_file_name", None)
+            return dataset_dict_strong
 
-        if "annotations" in dataset_dict:
-            self._transform_annotations(dataset_dict, transforms, image_shape)
+        if "annotations" in dataset_dict_strong:
+            self._transform_annotations(dataset_dict_strong, transforms, image_shape)
 
         # apply strong augmentation
         # We use torchvision augmentation, which is not compatiable with
@@ -115,17 +115,17 @@ class DatasetMapperTwoCropSeparate(DatasetMapper):
         # convert to PIL format first.
         image_pil = Image.fromarray(image_weak_aug.astype("uint8"), "RGB")
         image_strong_aug = np.array(self.strong_augmentation(image_pil))
-        dataset_dict["image"] = torch.as_tensor(
+        dataset_dict_strong["image"] = torch.as_tensor(
             np.ascontiguousarray(image_strong_aug.transpose(2, 0, 1))
         )
 
-        dataset_dict_key = copy.deepcopy(dataset_dict)
-        dataset_dict_key["image"] = torch.as_tensor(
+        dataset_dict_weak = copy.deepcopy(dataset_dict_strong)
+        dataset_dict_weak["image"] = torch.as_tensor(
             np.ascontiguousarray(image_weak_aug.transpose(2, 0, 1))
         )
-        assert dataset_dict["image"].size(1) == dataset_dict_key["image"].size(1)
-        assert dataset_dict["image"].size(2) == dataset_dict_key["image"].size(2)
-        return (dataset_dict, dataset_dict_key)
+        assert dataset_dict_strong["image"].size(1) == dataset_dict_weak["image"].size(1)
+        assert dataset_dict_strong["image"].size(2) == dataset_dict_weak["image"].size(2)
+        return (dataset_dict_strong, dataset_dict_weak)
 
 
 

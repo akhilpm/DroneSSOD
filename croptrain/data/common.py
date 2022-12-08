@@ -116,9 +116,9 @@ class AspectRatioGroupedSemiSupDatasetTwoCrop(AspectRatioGroupedDataset):
         self.batch_size_unlabel = batch_size[1]
 
         self._label_buckets = [[] for _ in range(2)]
-        self._label_buckets_key = [[] for _ in range(2)]
+        self._label_buckets_weak = [[] for _ in range(2)]
         self._unlabel_buckets = [[] for _ in range(2)]
-        self._unlabel_buckets_key = [[] for _ in range(2)]
+        self._unlabel_buckets_weak = [[] for _ in range(2)]
         # Hard-coded two aspect ratio groups: w > h and w < h.
         # Can add support for more aspect ratio groups, but doesn't seem useful
 
@@ -137,16 +137,16 @@ class AspectRatioGroupedSemiSupDatasetTwoCrop(AspectRatioGroupedDataset):
                 label_bucket_id = 0 if w > h else 1
                 label_bucket = self._label_buckets[label_bucket_id]
                 label_bucket.append(d_label[0])
-                label_buckets_key = self._label_buckets_key[label_bucket_id]
-                label_buckets_key.append(d_label[1])
+                label_buckets_weak = self._label_buckets_weak[label_bucket_id]
+                label_buckets_weak.append(d_label[1])
 
             if len(unlabel_bucket) != self.batch_size_unlabel:
                 w, h = d_unlabel[0]["width"], d_unlabel[0]["height"]
                 unlabel_bucket_id = 0 if w > h else 1
                 unlabel_bucket = self._unlabel_buckets[unlabel_bucket_id]
                 unlabel_bucket.append(d_unlabel[0])
-                unlabel_buckets_key = self._unlabel_buckets_key[unlabel_bucket_id]
-                unlabel_buckets_key.append(d_unlabel[1])
+                unlabel_buckets_weak = self._unlabel_buckets_weak[unlabel_bucket_id]
+                unlabel_buckets_weak.append(d_unlabel[1])
 
             # yield the batch of data until all buckets are full
             if (
@@ -156,11 +156,11 @@ class AspectRatioGroupedSemiSupDatasetTwoCrop(AspectRatioGroupedDataset):
                 # label_strong, label_weak, unlabed_strong, unlabled_weak
                 yield (
                     label_bucket[:],
-                    label_buckets_key[:],
+                    label_buckets_weak[:],
                     unlabel_bucket[:],
-                    unlabel_buckets_key[:],
+                    unlabel_buckets_weak[:],
                 )
                 del label_bucket[:]
-                del label_buckets_key[:]
+                del label_buckets_weak[:]
                 del unlabel_bucket[:]
-                del unlabel_buckets_key[:]
+                del unlabel_buckets_weak[:]

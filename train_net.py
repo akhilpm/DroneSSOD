@@ -11,9 +11,8 @@ from detectron2.modeling import GeneralizedRCNN
 from croptrain import add_croptrainer_config, add_ubteacher_config
 from croptrain.engine.trainer import UBTeacherTrainer, BaselineTrainer
 # hacky way to register
-from croptrain.modeling.meta_arch.rcnn import TwoStagePseudoLabGeneralizedRCNN
-from croptrain.modeling.meta_arch.retinanet import RetinaNet_D2
 from croptrain.modeling.proposal_generator.rpn import PseudoLabRPN
+from croptrain.modeling.meta_arch.rcnn import TwoStagePseudoLabGeneralizedRCNN
 from croptrain.modeling.roi_heads.roi_heads import StandardROIHeadsPseudoLab
 import croptrain.data.datasets.builtin
 from croptrain.data.datasets.visdrone import register_visdrone
@@ -79,13 +78,10 @@ def main(args):
                 cfg.MODEL.WEIGHTS, resume=args.resume
             )
             if cfg.CROPTRAIN.USE_CROPS:
-                if "dota" in cfg.DATASETS.TEST[0]:
-                    res = Trainer.test_sliding_window_patches(cfg, model, 0)
-                else:    
-                    res = Trainer.test_crop(cfg, model, 0)
+                res = Trainer.test_crop(cfg, model, 0)
             else:
                 if "dota" in cfg.DATASETS.TEST[0]:
-                    res = Trainer.test_sliding_window_patches(cfg, model, 0)
+                    res = Trainer.test_crop(cfg, model, 0)
                 else:
                     res = Trainer.test(cfg, model)
         return res
