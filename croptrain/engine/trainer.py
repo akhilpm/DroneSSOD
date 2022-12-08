@@ -789,7 +789,7 @@ class UBTeacherTrainer(DefaultTrainer):
 
         if comm.is_main_process():
             # run writers in the end, so that evaluation metrics are written
-            ret.append(hooks.PeriodicWriter(self.build_writers(), period=20))
+            ret.append(hooks.PeriodicWriter(self.build_writers(), period=100))
         return ret
 
 

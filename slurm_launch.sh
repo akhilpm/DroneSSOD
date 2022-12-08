@@ -28,5 +28,7 @@ cp -r $SLURM_TMPDIR/VisDrone2019-DET-val/images/ $SLURM_TMPDIR/VisDrone/val
 cp ~/projects/def-mpederso/akhil135/data_Aerial/VisDrone/annotations_VisDrone_val.json $SLURM_TMPDIR/VisDrone/
 #cp ~/projects/def-mpederso/akhil135/data_Aerial/VisDrone/train_crops.pkl $SLURM_TMPDIR/VisDrone/
 
+#python train_net.py --num-gpus 1 --config-file configs/Base-RCNN-FPN.yaml OUTPUT_DIR ~/scratch/DroneSSOD/FPN_10
 python train_net.py --resume --num-gpus 2 --config-file configs/visdrone/Semi-Sup-RCNN-FPN.yaml OUTPUT_DIR ~/scratch/DroneSSOD/FPN_SS_10
 #python train_net.py --num-gpus 1 --config-file configs/RCNN-FPN-CROP.yaml OUTPUT_DIR ~/scratch/DroneSSOD/FPN_CROP_10
+#python train_net.py --num-gpus 2 --config-file configs/visdrone/Semi-Sup-RCNN-FPN-CROP.yaml OUTPUT_DIR ~/scratch/DroneSSOD/FPN_CROP_SS_10

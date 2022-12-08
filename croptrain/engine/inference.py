@@ -34,60 +34,6 @@ def prune_boxes_inside_cluster(cluster_dicts, boxes, scores, num_classes):
     scores = scores.view(-1, num_classes)
     return [boxes], [scores]
 
-def get_box_predictions(model, features, proposals):
-    features = [features[f] for f in model.roi_heads.box_in_features]
-    box_features = model.roi_heads.box_pooler(features, [x.proposal_boxes for x in proposals])
-    box_features = model.roi_heads.box_head(box_features)
-    predictions = model.roi_heads.box_predictor(box_features)
-    del box_features
-    boxes = model.roi_heads.box_predictor.predict_boxes(predictions, proposals)
-    scores = model.roi_heads.box_predictor.predict_probs(predictions, proposals)
-    return list(boxes), list(scores)
-
-def project_boxes_to_image(data_dict, crop_sizes, boxes):
-    num_bbox_reg_classes = boxes.shape[1] // 4
-    output_height, output_width = data_dict.get("height"), data_dict.get("width")
-    new_size = (output_height, output_width)
-    scale_x, scale_y = (
-        output_width / crop_sizes[1],
-        output_height / crop_sizes[0],
-    )
-    boxes = Boxes(boxes.reshape(-1, 4))
-    boxes.scale(scale_x, scale_y)
-    boxes.clip(new_size)
-    boxes = boxes.tensor
-
-    #shift to the proper position of the crop in the image
-    if not data_dict["full_image"]:
-        x1, y1 = data_dict["crop_area"][0], data_dict["crop_area"][1]
-        ref_point = torch.tensor([x1, y1, x1, y1]).to(boxes.device)
-        boxes = boxes + ref_point
-    boxes = boxes.view(-1, num_bbox_reg_classes * 4) # R x C.4
-    return boxes
-
-def infer_on_image_and_crops(input_dicts, cluster_dicts, model, cfg):
-    images_original = model.preprocess_image(input_dicts)
-    features_original = model.backbone(images_original.tensor)
-    proposals_original, _ = model.proposal_generator(images_original, features_original, None)
-    #get detections from full image and project it to original image size
-    boxes, scores = get_box_predictions(model, features_original, proposals_original)
-    num_bbox_reg_classes = boxes[0].shape[1] // 4
-    boxes[0] = project_boxes_to_image(input_dicts[0], images_original.image_sizes[0], boxes[0])
-    del features_original
-
-    if cluster_dicts:
-        #boxes, scores = prune_boxes_inside_cluster(cluster_dicts, boxes, scores, num_bbox_reg_classes)
-        for i, cluster_dict in enumerate(cluster_dicts):
-            images_crop = model.preprocess_image([cluster_dict])
-            features_crop = model.backbone(images_crop.tensor)
-            proposals_crop, _ = model.proposal_generator(images_crop, features_crop, None)
-            #get detections from crop and project it to wrt to original image size
-            boxes_crop, scores_crop = get_box_predictions(model, features_crop, proposals_crop)
-            boxes_crop = project_boxes_to_image(cluster_dict, images_crop.image_sizes[0], boxes_crop[0])
-            boxes[0] = torch.cat([boxes[0], boxes_crop], dim=0)
-            scores[0] = torch.cat([scores[0], scores_crop[0]], dim=0)
-    return boxes, scores
-
 
 def inference_with_crops(model, data_loader, evaluator, cfg, iter):
     from detectron2.utils.comm import get_world_size
@@ -144,11 +90,9 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
             if len(cluster_boxes)!=0:
                 #cluster_boxes = merge_cluster_boxes(cluster_boxes, cfg)
                 cluster_dicts = get_dict_from_crops(cluster_boxes, inputs[0], cfg.CROPTEST.CROPSIZE)
-                boxes, scores = infer_on_image_and_crops(inputs, cluster_dicts, model, cfg)
-                #boxes, scores = model(inputs, cluster_dicts, infer_on_crops=True)
+                boxes, scores = model(inputs, cluster_dicts, infer_on_crops=True)
             else:
-                boxes, scores = infer_on_image_and_crops(inputs, None, model, cfg)
-                #boxes, scores = model(inputs, None, infer_on_crops=True)
+                boxes, scores = model(inputs, None, infer_on_crops=True)
             pred_instances, _ = fast_rcnn_inference(boxes, scores, image_shapes, cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST, \
                                     cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST, cfg.CROPTEST.DETECTIONS_PER_IMAGE)
             pred_instances = pred_instances[0]
