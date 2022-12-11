@@ -42,7 +42,8 @@ def add_ubteacher_config(cfg):
     # supervision level
     _C.DATALOADER.SUP_PERCENT = 100.0  # 5 = 5% dataset as labeled set
     _C.DATALOADER.RANDOM_DATA_SEED = 0  # random seed to read data
-    _C.DATALOADER.RANDOM_DATA_SEED_PATH = "dataseed/COCO_supervision.txt"
+    _C.DATALOADER.USE_RANDOM_SPLIT = True
+    _C.DATALOADER.SEED_PATH = "dataseed/visdrone_sup_10.0.txt"
 
     _C.EMAMODEL = CN()
     _C.EMAMODEL.SUP_CONSIST = True
@@ -55,6 +56,7 @@ def add_croptrainer_config(cfg):
     _C.CROPTRAIN.CLUSTER_THRESHOLD = 0.1
     _C.CROPTRAIN.CROPSIZE = (320, 476, 512, 640)
     _C.CROPTRAIN.MAX_CROPSIZE = 800
+    _C.CROPTRAIN.OLD_DATA_SIZE = 1
     _C.CROPTEST = CN()
     _C.CROPTEST.CLUS_THRESH = 0.3
     _C.CROPTEST.MAX_CLUSTER = 5

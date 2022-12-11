@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import operator
 import json
+import os
 import torch.utils.data
 from detectron2.utils.comm import get_world_size
 from detectron2.data.common import (
@@ -33,13 +34,25 @@ This file contains the default logic to build a dataloader for training or testi
 """
 
 
-def divide_label_unlabel(dataset_dicts, SupPercent):
+def divide_label_unlabel(dataset_dicts, cfg):
 
-    num_all = len(dataset_dicts)
-    num_label = int(SupPercent / 100.0 * num_all)
-
-    # generate a permutation of images
-    random_perm_index = np.random.permutation(num_all)
+    num_all = cfg.CROPTRAIN.OLD_DATA_SIZE
+    num_label = int(cfg.DATALOADER.SUP_PERCENT / 100.0 * num_all)
+    dataset_name = cfg.DATASETS.TRAIN[0].split("_")[0]
+    if cfg.CROPTRAIN.USE_CROPS:
+        seed_file = os.path.join("dataseed", dataset_name + "_sup_crop_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
+    else:
+        seed_file = os.path.join("dataseed", dataset_name + "_sup_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
+    if cfg.DATALOADER.USE_RANDOM_SPLIT:
+        # generate a permutation of images
+        random_perm_index = np.random.permutation(num_all)
+        split_dict = {"perm": random_perm_index.tolist()}
+        with open(seed_file, "w") as f:
+            json.dump(split_dict, f)
+    else:
+        with open(seed_file) as f:
+            random_perm_index = json.load(f)
+        random_perm_index = random_perm_index["perm"]
 
     label_dicts = []
     unlabel_dicts = []
@@ -70,7 +83,7 @@ def build_detection_semisup_train_loader(cfg, mapper=None):
     # Divide into labeled and unlabeled sets according to supervision percentage
     label_dicts, unlabel_dicts = divide_label_unlabel(
         dataset_dicts,
-        cfg.DATALOADER.SUP_PERCENT
+        cfg
     )
 
     dataset = DatasetFromList(label_dicts, copy=False)
@@ -200,7 +213,7 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
         # Divide into labeled and unlabeled sets according to supervision percentage
         label_dicts, unlabel_dicts = divide_label_unlabel(
             dataset_dicts,
-            cfg.DATALOADER.SUP_PERCENT
+            cfg
         )
 
     label_dataset = DatasetFromList(label_dicts, copy=False)
