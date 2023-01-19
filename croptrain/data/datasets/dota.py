@@ -9,7 +9,8 @@ import copy
 from itertools import compress
 from fvcore.common.timer import Timer
 import logging
-from detectron2.structures import Boxes, BoxMode
+import json
+from detectron2.structures import BoxMode
 from utils.box_utils import compute_crops, bbox_inside
 
 logger = logging.getLogger(__name__)
@@ -143,9 +144,11 @@ def load_dota_instances(dataset_name, data_dir, cfg, is_train, extra_annotation_
 
     dataset_dicts = []
     ann_keys = ["iscrowd", "bbox", "category_id"] + (extra_annotation_keys or [])
+    file_names = []
     for k, (img_dict, anno_dict_list) in enumerate(imgs_anns):
         record = {}
         record["file_name"] = os.path.join(image_path, img_dict["file_name"])
+        file_names.append(img_dict["file_name"])
         record["height"] = img_dict["height"]
         record["width"] = img_dict["width"]
         image_id = record["image_id"] = img_dict["id"]
@@ -185,6 +188,17 @@ def load_dota_instances(dataset_name, data_dir, cfg, is_train, extra_annotation_
                 dataset_dicts += new_data_dicts
         else:        
             dataset_dicts.append(record)
+
+    dataset_name = cfg.DATASETS.TRAIN[0].split("_")[0]
+    seed_file = os.path.join("dataseed", dataset_name + "_sup_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
+    if cfg.DATALOADER.USE_RANDOM_SPLIT:
+        # generate a permutation of images
+        np.random.seed(cfg.DATALOADER.RANDOM_DATA_SEED)
+        random_perm = np.random.permutation(len(file_names)).tolist()
+        split_dict = {"perm": random_perm, "imagenames": file_names}
+        with open(seed_file, "w") as f:
+            json.dump(split_dict, f)
+
     if cfg.CROPTRAIN.USE_CROPS and is_train:
         dataset_dicts  = extract_crops_from_image(dataset_dicts, cfg)
     return dataset_dicts

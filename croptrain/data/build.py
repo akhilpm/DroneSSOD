@@ -35,34 +35,28 @@ This file contains the default logic to build a dataloader for training or testi
 
 
 def divide_label_unlabel(dataset_dicts, cfg):
-
-    num_all = cfg.CROPTRAIN.OLD_DATA_SIZE
-    num_label = int(cfg.DATALOADER.SUP_PERCENT / 100.0 * num_all)
     dataset_name = cfg.DATASETS.TRAIN[0].split("_")[0]
-    if cfg.CROPTRAIN.USE_CROPS:
-        seed_file = os.path.join("dataseed", dataset_name + "_sup_crop_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
-    else:
-        seed_file = os.path.join("dataseed", dataset_name + "_sup_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
-    if cfg.DATALOADER.USE_RANDOM_SPLIT:
-        # generate a permutation of images
-        random_perm_index = np.random.permutation(num_all)
-        split_dict = {"perm": random_perm_index.tolist()}
-        with open(seed_file, "w") as f:
-            json.dump(split_dict, f)
-    else:
-        with open(seed_file) as f:
-            random_perm_index = json.load(f)
-        random_perm_index = random_perm_index["perm"]
-
+    seed_file = os.path.join("dataseed", dataset_name + "_sup_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
+    with open(seed_file) as f:
+        random_perm_data = json.load(f)
+    random_perm = random_perm_data["perm"]
+    num_all = len(random_perm)
+    num_label = int(cfg.DATALOADER.SUP_PERCENT / 100.0 * num_all)
+    shuffled_images = [random_perm_data["imagenames"][x] for x in random_perm]   
+    labeled_image_ids = shuffled_images[:num_label]
     label_dicts = []
     unlabel_dicts = []
 
     for i in range(len(dataset_dicts)):
-        if i < num_label:
-            label_dicts.append(dataset_dicts[random_perm_index[i]])
+        file_name = dataset_dicts[i]["file_name"].split('/')[-1]
+        if file_name in labeled_image_ids:
+            label_dicts.append(dataset_dicts[i])
+        elif dataset_dicts[i]['full_image']:
+            unlabel_dicts.append(dataset_dicts[i])
+        elif (dataset_dicts[i].get("inner_crop_area")!=None and dataset_dicts[i]["two_stage_crop"]==False):
+            unlabel_dicts.append(dataset_dicts[i])
         else:
-            unlabel_dicts.append(dataset_dicts[random_perm_index[i]])
-
+            continue   
     return label_dicts, unlabel_dicts
 
 

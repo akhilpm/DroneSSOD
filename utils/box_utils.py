@@ -31,8 +31,7 @@ def bbox_scale(boxes, height, width):
     scaled_boxes = np.stack([x_min, y_min, x_max, y_max], axis=1)
     return scaled_boxes
 
-def bbox_scale_by_factor(boxes, im_height, im_width):
-    scale_factor = 10.0
+def bbox_scale_by_factor(boxes, im_height, im_width, scale_factor=10.0):
     x_min, y_min = boxes[:, 0], boxes[:, 1]
     x_max, y_max = boxes[:, 2], boxes[:, 3]
     width, height = x_max-x_min, y_max-y_min
