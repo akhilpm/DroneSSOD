@@ -10,6 +10,7 @@ from fvcore.nn.precise_bn import get_bn_modules
 import numpy as np
 from collections import OrderedDict
 import copy
+import random
 import datetime
 
 from torchvision.transforms import Resize
@@ -41,6 +42,8 @@ from croptrain.checkpoint.detection_checkpoint import DetectionTSCheckpointer
 from croptrain.solver.build import build_lr_scheduler
 from croptrain.engine.inference_tile import get_dict_from_crops
 from utils.box_utils import bbox_inside_old
+from comet_ml import Experiment
+#experiment = Experiment(api_key="1hcgnVQrXhiriiUepdKOqLlwf", project_name="aerialssod", workspace="akhilpm", log_code=False)
 
 
 # Supervised-only Trainer
@@ -598,10 +601,11 @@ class UBTeacherTrainer(DefaultTrainer):
             )
             joint_proposal_dict["proposals_pseudo_rpn"] = pesudo_proposals_rpn_unsup_w
             # Pseudo_labeling for ROI head (bbox location/objectness)
-            pesudo_proposals_roih_unsup_w, _ = self.process_pseudo_label(
+            pesudo_proposals_roih_unsup_w, avg_pseudo_gtboxes = self.process_pseudo_label(
                 proposals_roih_unsup_w, cur_threshold, "roih", "thresholding"
             )
             joint_proposal_dict["proposals_pseudo_roih"] = pesudo_proposals_roih_unsup_w
+            #experiment.log_metric("avg_no_pseudo_gt_boxes", avg_no_pseudo_gt_boxes, step=self.iter)
 
             # add pseudo-label to unlabeled data
 
@@ -624,7 +628,7 @@ class UBTeacherTrainer(DefaultTrainer):
                     if len(cluster_boxes) > 0:
                         inner_crop = True if "dota" in self.cfg.DATASETS.TRAIN[0] else False
                         """ The psuedo GT boxes of crops are used to augment the train set """
-                        cluster_dicts = get_dict_from_crops(cluster_boxes, unlabel_data_s[k], self.cfg.CROPTEST.CROPSIZE, inner_crop)
+                        cluster_dicts = get_dict_from_crops(cluster_boxes, unlabel_data_w[k], inner_crop=inner_crop)
                         all_cluster_dicts = all_cluster_dicts + cluster_dicts
 
                 all_unlabel_data = all_unlabel_data + all_cluster_dicts
@@ -642,6 +646,7 @@ class UBTeacherTrainer(DefaultTrainer):
                     key
                 ]
             record_dict.update(new_record_all_unlabel_data)
+            #experiment.log_metrics(record_dict, step=self.iter)
 
             # weight losses
             loss_dict = {}
@@ -839,6 +844,7 @@ class UBTeacherTrainer(DefaultTrainer):
             else:
                 results_i = inference_with_crops(model, data_loader, evaluator, cfg, iter)
             results[dataset_name] = results_i
+            #experiment.log_metrics(results_i["bbox"], step=iter)
             if comm.is_main_process():
                 assert isinstance(
                     results_i, dict
@@ -860,17 +866,22 @@ def get_dict_from_crops(crops, input_dict, CROPSIZE=500, inner_crop=False):
         crops: The density crops in this image: shape N*4. 
         input_dict: The dict of this image with the GT boxes in it.
     """
+    sizes =  (320, 476, 512, 640)
+    CROPSIZE = random.choice(sizes)
     if len(crops)==0:
         return []
     if isinstance(crops, Instances):
+        crop_scores = crops.scores.cpu().numpy().astype(np.int32)        
         crops = crops.gt_boxes.tensor.cpu().numpy().astype(np.int32)
+    score_sort_index = crop_scores.argsort()[::-1]
     transform = Resize(CROPSIZE)
     gt_instances = input_dict["instances"]
     """ tensors converted to numpy for bbox operations """
     gt_boxes = gt_instances.gt_boxes.tensor.cpu().numpy().astype(np.int32)
     crop_dicts = []
-    for i in range(len(crops)):
-        x1, y1, x2, y2 = crops[i, 0], crops[i, 1], crops[i, 2], crops[i, 3]
+    for i in range(min(len(crops), 4)):
+        curr_crop = crops[score_sort_index[i]]
+        x1, y1, x2, y2 = curr_crop[0], curr_crop[1], curr_crop[2], curr_crop[3]
         ref_point = torch.tensor([x1, y1, x1, y1]).to(gt_instances.gt_boxes.device)
         crop_size_min = min(x2-x1, y2-y1)
         if crop_size_min<=0:
@@ -882,9 +893,9 @@ def get_dict_from_crops(crops, input_dict, CROPSIZE=500, inner_crop=False):
             crop_dict["inner_crop_area"] = np.array([x1, y1, x2, y2]).astype(np.int32)
         else:    
             crop_dict['crop_area'] = np.array([x1, y1, x2, y2]).astype(np.int32)
-        crop = crop_image(crop_dict, input_dict["image"])
-        crop_region = transform(crop)
-        crop_dict["image"] = crop_region
+        crop_orig = crop_image(crop_dict, input_dict["image"])
+        crop_resized = transform(crop_orig)
+        crop_dict["image"] = crop_resized
         crop_dict["height"] = (y2-y1)
         crop_dict["width"] = (x2-x1)
         inside_boxes = bbox_inside_old(crops[i], gt_boxes)
