@@ -42,6 +42,7 @@ from croptrain.checkpoint.detection_checkpoint import DetectionTSCheckpointer
 from croptrain.solver.build import build_lr_scheduler
 from croptrain.engine.inference_tile import get_dict_from_crops
 from utils.box_utils import bbox_inside_old
+from utils.plot_utils import plot_pseudo_gt_boxes
 from comet_ml import Experiment
 #experiment = Experiment(api_key="1hcgnVQrXhiriiUepdKOqLlwf", project_name="aerialssod", workspace="akhilpm", log_code=False)
 
@@ -595,11 +596,11 @@ class UBTeacherTrainer(DefaultTrainer):
             cur_threshold = self.cfg.SEMISUPNET.BBOX_THRESHOLD
 
             joint_proposal_dict = {}
-            joint_proposal_dict["proposals_rpn"] = proposals_rpn_unsup_w
-            pesudo_proposals_rpn_unsup_w, _ = self.process_pseudo_label(
-                proposals_rpn_unsup_w, cur_threshold, "rpn", "thresholding"
-            )
-            joint_proposal_dict["proposals_pseudo_rpn"] = pesudo_proposals_rpn_unsup_w
+            #joint_proposal_dict["proposals_rpn"] = proposals_rpn_unsup_w
+            #pesudo_proposals_rpn_unsup_w, _ = self.process_pseudo_label(
+            #    proposals_rpn_unsup_w, cur_threshold, "rpn", "thresholding"
+            #)
+            #joint_proposal_dict["proposals_pseudo_rpn"] = pesudo_proposals_rpn_unsup_w
             # Pseudo_labeling for ROI head (bbox location/objectness)
             pesudo_proposals_roih_unsup_w, avg_pseudo_gtboxes = self.process_pseudo_label(
                 proposals_roih_unsup_w, cur_threshold, "roih", "thresholding"
@@ -621,17 +622,31 @@ class UBTeacherTrainer(DefaultTrainer):
 
             if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP:
                 cluster_class = self.cfg.MODEL.ROI_HEADS.NUM_CLASSES - 1
-                all_cluster_dicts = []
+                all_weak_cluster_dicts, all_strong_cluster_dicts = [], []
                 for k, pseudo_proposals_per_image in enumerate(pesudo_proposals_roih_unsup_w):
                     cluster_indices = (pseudo_proposals_per_image.gt_classes==cluster_class)
                     cluster_boxes = pseudo_proposals_per_image[cluster_indices]
                     if len(cluster_boxes) > 0:
                         inner_crop = True if "dota" in self.cfg.DATASETS.TRAIN[0] else False
                         """ The psuedo GT boxes of crops are used to augment the train set """
-                        cluster_dicts = get_dict_from_crops(cluster_boxes, unlabel_data_w[k], inner_crop=inner_crop)
-                        all_cluster_dicts = all_cluster_dicts + cluster_dicts
+                        unlabel_data_w[k]["image"] = unlabel_data_w[k]["image"].to(torch.uint8)
+                        weak_cluster_dicts, strong_cluster_dicts = get_dict_from_crops(cluster_boxes, unlabel_data_w[k], unlabel_data_s[k], inner_crop=inner_crop)
+                        all_weak_cluster_dicts = all_weak_cluster_dicts + weak_cluster_dicts
+                        all_strong_cluster_dicts = all_strong_cluster_dicts + strong_cluster_dicts
 
-                all_unlabel_data = all_unlabel_data + all_cluster_dicts
+                if len(all_weak_cluster_dicts)>0:
+                    """ compute the labels on the rescaled crops with the teacher network """
+                    all_weak_cluster_dicts = self.remove_label(all_weak_cluster_dicts)
+                    all_strong_cluster_dicts = self.remove_label(all_strong_cluster_dicts)
+                    with torch.no_grad():
+                        _, _, proposals_roih_cluster_w, _ = self.model_teacher(all_weak_cluster_dicts, branch="unsup_data_weak")
+                    pesudo_proposals_roih_cluster_w, _ = self.process_pseudo_label(
+                        proposals_roih_cluster_w, cur_threshold, "roih", "thresholding"
+                    )
+                    all_strong_cluster_dicts = self.add_label(all_strong_cluster_dicts, pesudo_proposals_roih_cluster_w)
+                    #if random.random()>0.7:
+                    #plot_pseudo_gt_boxes(all_cluster_dicts[0], "crop")
+                    # all_unlabel_data = all_unlabel_data + all_cluster_dicts
 
             record_all_label_data, _, _, _ = self.model(
                 all_label_data, branch="supervised"
@@ -642,10 +657,18 @@ class UBTeacherTrainer(DefaultTrainer):
             )
             new_record_all_unlabel_data = {}
             for key in record_all_unlabel_data.keys():
-                new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[
-                    key
-                ]
+                new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[key]
             record_dict.update(new_record_all_unlabel_data)
+
+            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP and len(all_strong_cluster_dicts)>0:
+                record_all_cluster_data, _, _, _ = self.model(
+                    all_strong_cluster_dicts, branch="supervised"
+                )
+                new_record_all_cluster_data = {}
+                for key in record_all_cluster_data.keys():
+                    new_record_all_cluster_data[key + "_cluster"] = record_all_cluster_data[key]
+                record_dict.update(new_record_all_cluster_data)
+                all_weak_cluster_dicts, all_strong_cluster_dicts = [], []
             #experiment.log_metrics(record_dict, step=self.iter)
 
             # weight losses
@@ -654,6 +677,8 @@ class UBTeacherTrainer(DefaultTrainer):
                 if key[:4] == "loss":
                     if key == "loss_rpn_loc_pseudo" or key == "loss_box_reg_pseudo":
                         # pseudo bbox regression <- 0
+                        loss_dict[key] = record_dict[key] * 0
+                    elif key == "loss_rpn_loc_cluster" or key == "loss_box_reg_cluster":
                         loss_dict[key] = record_dict[key] * 0
                     elif key[-6:] == "pseudo":  # unsupervised loss
                         loss_dict[key] = (
@@ -859,14 +884,14 @@ class UBTeacherTrainer(DefaultTrainer):
         return results
 
 
-def get_dict_from_crops(crops, input_dict, CROPSIZE=500, inner_crop=False):
+def get_dict_from_crops(crops, input_dict, input_dict_strong, inner_crop=False):
     """ 
         Given a set of density crops, select the GT boxes inside and returns the cropped region as an augmented image
         with the GT boxes inside it as the target locations.
         crops: The density crops in this image: shape N*4. 
         input_dict: The dict of this image with the GT boxes in it.
     """
-    sizes =  (320, 476, 512, 640)
+    sizes =  (320, 476, 512, 640, 720)
     CROPSIZE = random.choice(sizes)
     if len(crops)==0:
         return []
@@ -878,8 +903,9 @@ def get_dict_from_crops(crops, input_dict, CROPSIZE=500, inner_crop=False):
     gt_instances = input_dict["instances"]
     """ tensors converted to numpy for bbox operations """
     gt_boxes = gt_instances.gt_boxes.tensor.cpu().numpy().astype(np.int32)
-    crop_dicts = []
-    for i in range(min(len(crops), 4)):
+    crop_dicts_weak = []
+    crop_dicts_strong = []
+    for i in range(min(len(crops), 3)):
         curr_crop = crops[score_sort_index[i]]
         x1, y1, x2, y2 = curr_crop[0], curr_crop[1], curr_crop[2], curr_crop[3]
         ref_point = torch.tensor([x1, y1, x1, y1]).to(gt_instances.gt_boxes.device)
@@ -893,29 +919,36 @@ def get_dict_from_crops(crops, input_dict, CROPSIZE=500, inner_crop=False):
             crop_dict["inner_crop_area"] = np.array([x1, y1, x2, y2]).astype(np.int32)
         else:    
             crop_dict['crop_area'] = np.array([x1, y1, x2, y2]).astype(np.int32)
-        crop_orig = crop_image(crop_dict, input_dict["image"])
+        crop_orig, crop_strong = crop_image(crop_dict, input_dict["image"], input_dict_strong["image"])
         crop_resized = transform(crop_orig)
+        crop_strong = transform(crop_strong)
         crop_dict["image"] = crop_resized
         crop_dict["height"] = (y2-y1)
         crop_dict["width"] = (x2-x1)
-        inside_boxes = bbox_inside_old(crops[i], gt_boxes)
-        if inside_boxes.sum()==0:
-            continue
-        crop_dict["instances"] = crop_dict["instances"][inside_boxes]
-        crop_dict["instances"].gt_boxes.tensor -= ref_point
-        #plot_pseudo_gt_boxes(crop_dict, "orig", crop)
-        scale_factor = float(CROPSIZE)/crop_size_min
-        scaled_boxes = crop_dict["instances"].gt_boxes.tensor.cpu().numpy() * scale_factor
-        crop_dict["instances"].gt_boxes = Boxes(torch.from_numpy(scaled_boxes)).to(gt_instances.gt_boxes.device)
-        crop_dicts.append(crop_dict)
-    return crop_dicts
+        if "instances" in crop_dict:
+            del crop_dict["instances"]
+        #inside_boxes, inside_flag = bbox_inside(crops[i], gt_boxes)
+        #if inside_flag.sum()==0:
+        #    continue
+        #scale_factor = float(CROPSIZE)/crop_size_min
+        #inside_boxes = inside_boxes * scale_factor
+        #crop_dict["instances"] = crop_dict["instances"][inside_flag]
+        #crop_dict["instances"].gt_boxes.tensor = torch.from_numpy(inside_boxes).to(gt_instances.gt_boxes.device)
+        #crop_dict["instances"].gt_boxes.tensor -= ref_point
+        #plot_pseudo_gt_boxes(crop_dict, "orig", crop_orig)
+        crop_dicts_weak.append(crop_dict)
+        crop_dict_strong = copy.deepcopy(crop_dict)
+        crop_dict_strong["image"] = crop_strong
+        crop_dicts_strong.append(crop_dict_strong)
+    return crop_dicts_weak, crop_dicts_strong
 
 
-def crop_image(dataset_dict, image):
+def crop_image(dataset_dict, image, image_strong):
     if dataset_dict["two_stage_crop"]:
         crop_area = dataset_dict['inner_crop_area']
     else:
         crop_area = dataset_dict['crop_area']
     x1, y1, x2, y2 = crop_area[0], crop_area[1], crop_area[2], crop_area[3]
     image = image[:, y1:y2, x1:x2]
-    return image
+    image_strong = image_strong[:, y1:y2, x1:x2]
+    return image, image_strong

@@ -32,7 +32,7 @@ def plot_pseudo_gt_boxes(data_dict, tag, img=None):
     plt.axis('off') 
     plt.imshow(img)
     ax = plt.gca()
-    gt_instances = data_dict["instances"].to("cpu")
+    gt_instances = data_dict.get("instances", [])
     if len(gt_instances)!=0:
         gt_boxes = gt_instances.gt_boxes.tensor.cpu()
         for bbox in gt_boxes:
