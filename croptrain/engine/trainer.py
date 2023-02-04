@@ -641,9 +641,10 @@ class UBTeacherTrainer(DefaultTrainer):
                     with torch.no_grad():
                         _, _, proposals_roih_cluster_w, _ = self.model_teacher(all_weak_cluster_dicts, branch="unsup_data_weak")
                     pesudo_proposals_roih_cluster_w, _ = self.process_pseudo_label(
-                        proposals_roih_cluster_w, cur_threshold, "roih", "thresholding"
+                        proposals_roih_cluster_w, 0.9, "roih", "thresholding"
                     )
                     all_strong_cluster_dicts = self.add_label(all_strong_cluster_dicts, pesudo_proposals_roih_cluster_w)
+                    #print([len(item) for item in pesudo_proposals_roih_cluster_w])
                     #if random.random()>0.7:
                     #plot_pseudo_gt_boxes(all_cluster_dicts[0], "crop")
                     # all_unlabel_data = all_unlabel_data + all_cluster_dicts
@@ -660,14 +661,19 @@ class UBTeacherTrainer(DefaultTrainer):
                 new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[key]
             record_dict.update(new_record_all_unlabel_data)
 
-            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP and len(all_strong_cluster_dicts)>0:
-                record_all_cluster_data, _, _, _ = self.model(
-                    all_strong_cluster_dicts, branch="supervised"
-                )
-                new_record_all_cluster_data = {}
-                for key in record_all_cluster_data.keys():
-                    new_record_all_cluster_data[key + "_cluster"] = record_all_cluster_data[key]
-                record_dict.update(new_record_all_cluster_data)
+            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP: 
+                if len(all_weak_cluster_dicts)>0:
+                    record_all_cluster_data, _, _, _ = self.model(
+                        all_strong_cluster_dicts, branch="supervised"
+                    )
+                    new_record_all_cluster_data = {}
+                    for key in record_all_cluster_data.keys():
+                        new_record_all_cluster_data[key + "_cluster_pseudo"] = record_all_cluster_data[key]
+                    record_dict.update(new_record_all_cluster_data)
+                else:
+                    new_record_all_cluster_data = {"loss_cls_cluster_pseudo": 0.0, "loss_box_reg_cluster_pseudo": 0.0, 
+                    "loss_rpn_cls_cluster_pseudo": 0.0, "loss_rpn_loc_cluster_pseudo": 0.0}
+                    record_dict.update(new_record_all_cluster_data)
                 all_weak_cluster_dicts, all_strong_cluster_dicts = [], []
             #experiment.log_metrics(record_dict, step=self.iter)
 
@@ -678,7 +684,7 @@ class UBTeacherTrainer(DefaultTrainer):
                     if key == "loss_rpn_loc_pseudo" or key == "loss_box_reg_pseudo":
                         # pseudo bbox regression <- 0
                         loss_dict[key] = record_dict[key] * 0
-                    elif key == "loss_rpn_loc_cluster" or key == "loss_box_reg_cluster":
+                    elif key == "loss_rpn_loc_cluster_pseudo" or key == "loss_box_reg_cluster_pseudo":
                         loss_dict[key] = record_dict[key] * 0
                     elif key[-6:] == "pseudo":  # unsupervised loss
                         loss_dict[key] = (
