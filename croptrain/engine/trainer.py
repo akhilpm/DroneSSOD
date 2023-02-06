@@ -42,6 +42,7 @@ from croptrain.checkpoint.detection_checkpoint import DetectionTSCheckpointer
 from croptrain.solver.build import build_lr_scheduler
 from croptrain.engine.inference_tile import get_dict_from_crops
 from utils.box_utils import bbox_inside_old
+from croptrain.data.detection_utils import read_image
 from utils.plot_utils import plot_pseudo_gt_boxes
 from comet_ml import Experiment
 #experiment = Experiment(api_key="1hcgnVQrXhiriiUepdKOqLlwf", project_name="aerialssod", workspace="akhilpm", log_code=False)
@@ -630,7 +631,7 @@ class UBTeacherTrainer(DefaultTrainer):
                         inner_crop = True if "dota" in self.cfg.DATASETS.TRAIN[0] else False
                         """ The psuedo GT boxes of crops are used to augment the train set """
                         unlabel_data_w[k]["image"] = unlabel_data_w[k]["image"].to(torch.uint8)
-                        weak_cluster_dicts, strong_cluster_dicts = get_dict_from_crops(cluster_boxes, unlabel_data_w[k], unlabel_data_s[k], inner_crop=inner_crop)
+                        weak_cluster_dicts, strong_cluster_dicts = get_weak_strong_dict_from_crops(cluster_boxes, unlabel_data_w[k], unlabel_data_s[k], inner_crop=inner_crop)
                         all_weak_cluster_dicts = all_weak_cluster_dicts + weak_cluster_dicts
                         all_strong_cluster_dicts = all_strong_cluster_dicts + strong_cluster_dicts
 
@@ -890,7 +891,7 @@ class UBTeacherTrainer(DefaultTrainer):
         return results
 
 
-def get_dict_from_crops(crops, input_dict, input_dict_strong, inner_crop=False):
+def get_weak_strong_dict_from_crops(crops, input_dict, input_dict_strong, inner_crop=False):
     """ 
         Given a set of density crops, select the GT boxes inside and returns the cropped region as an augmented image
         with the GT boxes inside it as the target locations.
@@ -906,6 +907,7 @@ def get_dict_from_crops(crops, input_dict, input_dict_strong, inner_crop=False):
         crops = crops.gt_boxes.tensor.cpu().numpy().astype(np.int32)
     score_sort_index = crop_scores.argsort()[::-1]
     transform = Resize(CROPSIZE)
+    #crops = project_boxes_to_image(input_dict, crops)
     gt_instances = input_dict["instances"]
     """ tensors converted to numpy for bbox operations """
     gt_boxes = gt_instances.gt_boxes.tensor.cpu().numpy().astype(np.int32)
@@ -926,6 +928,7 @@ def get_dict_from_crops(crops, input_dict, input_dict_strong, inner_crop=False):
         else:    
             crop_dict['crop_area'] = np.array([x1, y1, x2, y2]).astype(np.int32)
         crop_orig, crop_strong = crop_image(crop_dict, input_dict["image"], input_dict_strong["image"])
+        #crop_dict_weak, crop_dict_strong = self.mapper(crop_dict)
         crop_resized = transform(crop_orig)
         crop_strong = transform(crop_strong)
         crop_dict["image"] = crop_resized
@@ -945,6 +948,7 @@ def get_dict_from_crops(crops, input_dict, input_dict_strong, inner_crop=False):
         crop_dicts_weak.append(crop_dict)
         crop_dict_strong = copy.deepcopy(crop_dict)
         crop_dict_strong["image"] = crop_strong
+        #crop_dicts_weak.append(crop_dict_weak)
         crop_dicts_strong.append(crop_dict_strong)
     return crop_dicts_weak, crop_dicts_strong
 
@@ -958,3 +962,17 @@ def crop_image(dataset_dict, image, image_strong):
     image = image[:, y1:y2, x1:x2]
     image_strong = image_strong[:, y1:y2, x1:x2]
     return image, image_strong
+
+
+def project_boxes_to_image(data_dict, crops):
+    output_height, output_width = data_dict.get("height"), data_dict.get("width")
+    new_size = (output_height, output_width)
+    im_height, im_width = data_dict["image"].shape[1], data_dict["image"].shape[2]
+    scale_x, scale_y = (
+        output_width / im_width,
+        output_height / im_height,
+    )
+    boxes = Boxes(crops)
+    boxes.scale(scale_x, scale_y)
+    boxes.clip(new_size)
+    return boxes.tensor.numpy().astype(np.int32)
