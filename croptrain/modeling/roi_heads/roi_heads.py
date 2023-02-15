@@ -1,6 +1,8 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 import torch
+import torch.nn as nn
 from typing import Dict, List, Optional, Tuple, Union
+from detectron2.config import configurable
 from detectron2.structures import Boxes, ImageList, Instances, pairwise_iou
 from detectron2.modeling.proposal_generator.proposal_utils import (
     add_ground_truth_to_proposals,
@@ -14,6 +16,7 @@ from detectron2.modeling.roi_heads import (
 )
 from detectron2.modeling.roi_heads.fast_rcnn import FastRCNNOutputLayers
 from croptrain.modeling.roi_heads.fast_rcnn import FastRCNNFocaltLossOutputLayers
+import torch.nn.functional as F
 
 import numpy as np
 from detectron2.modeling.poolers import ROIPooler
@@ -86,15 +89,15 @@ class StandardROIHeadsPseudoLab(StandardROIHeads):
                 proposals, targets, branch=branch
             )  # do not apply target on proposals
             self.proposal_append_gt = temp_proposal_append_gt
-        del targets
+        #del targets
 
         if (self.training and compute_loss) or compute_val_loss:
             losses, _ = self._forward_box(
-                features, proposals, compute_loss, compute_val_loss, branch
+                features, proposals, compute_loss, compute_val_loss, branch, targets
             )
             return proposals, losses
         else:
-            pred_instances, predictions = self._forward_box(features, proposals, compute_loss, compute_val_loss, branch)
+            pred_instances, predictions = self._forward_box(features, proposals, compute_loss, compute_val_loss, branch, targets)
             return pred_instances, predictions
 
     def _forward_box(
@@ -104,12 +107,32 @@ class StandardROIHeadsPseudoLab(StandardROIHeads):
         compute_loss: bool = True,
         compute_val_loss: bool = False,
         branch: str = "",
+        targets: Optional[List[Instances]] = None
     ) -> Union[Dict[str, torch.Tensor], List[Instances]]:
         features = [features[f] for f in self.box_in_features]
         box_features = self.box_pooler(features, [x.proposal_boxes for x in proposals])
         box_features = self.box_head(box_features)
         predictions = self.box_predictor(box_features)
         del box_features
+
+        if targets:
+            target_features = self.box_pooler(features, [x.gt_boxes for x in targets])
+            target_features = self.box_head(target_features)
+            cls_scores = F.softmax(self.box_predictor(target_features)[0], dim=-1).detach()
+            del target_features
+            """ fetch scores for each gt class and update the mean scores of each class """
+            gt_classes = torch.cat([x.gt_classes for x in targets])
+            cls_scores = cls_scores.gather(1, gt_classes.view(-1, 1))            
+            unique_classes, label_counts = gt_classes.unique(return_counts=True)
+            max_class_batch = gt_classes.max() + 1
+            results = cls_scores.new_zeros(max_class_batch)
+            results.index_add_(0, gt_classes, cls_scores)
+            counts = label_counts.new_ones(max_class_batch)
+            counts[unique_classes] = label_counts
+            results /= counts
+            new_scores = self.mean_class_scores[:max_class_batch] * self.ema_class_score + results * (1-self.ema_class_score)
+            self.mean_class_scores.scatter_(0, torch.arange(max_class_batch).to(cls_scores.device), new_scores.clip(max=0.8))
+
 
         if (
             self.training and compute_loss

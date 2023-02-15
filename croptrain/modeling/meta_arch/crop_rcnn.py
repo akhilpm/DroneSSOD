@@ -99,12 +99,6 @@ class CropRCNN(GeneralizedRCNN):
                 #get detections from crop and project it to wrt to original image size
                 boxes_crop, scores_crop = self.get_box_predictions(features_crop, proposals_crop)
                 boxes_crop = project_boxes_to_image(cluster_dict, images_crop.image_sizes[0], boxes_crop[0])
-                if cluster_dict["two_stage_crop"]:
-                    x1, y1 = cluster_dict["crop_area"][0], cluster_dict["crop_area"][1]
-                    ref_point = torch.tensor([x1, y1, x1, y1]).to(boxes_crop.device)
-                    boxes_crop = boxes_crop.reshape(-1, 4)
-                    boxes_crop = boxes_crop + ref_point
-                    boxes_crop = boxes_crop.view(-1, num_bbox_reg_classes * 4)
                 boxes[0] = torch.cat([boxes[0], boxes_crop], dim=0)
                 scores[0] = torch.cat([scores[0], scores_crop[0]], dim=0)
         return boxes, scores
@@ -126,8 +120,9 @@ def project_boxes_to_image(data_dict, crop_sizes, boxes):
     if not data_dict["full_image"]:
         if data_dict["two_stage_crop"]:
             x1, y1 = data_dict['inner_crop_area'][0], data_dict['inner_crop_area'][1]
-        else:
-            x1, y1 = data_dict["crop_area"][0], data_dict["crop_area"][1]
+            ref_point = torch.tensor([x1, y1, x1, y1]).to(boxes.device)
+            boxes = boxes + ref_point
+        x1, y1 = data_dict["crop_area"][0], data_dict["crop_area"][1]
         ref_point = torch.tensor([x1, y1, x1, y1]).to(boxes.device)
         boxes = boxes + ref_point
     boxes = boxes.view(-1, num_bbox_reg_classes * 4) # R x C.4
