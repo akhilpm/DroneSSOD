@@ -131,7 +131,7 @@ class StandardROIHeadsPseudoLab(StandardROIHeads):
             counts[unique_classes] = label_counts
             results /= counts
             new_scores = self.mean_class_scores[:max_class_batch] * self.ema_class_score + results * (1-self.ema_class_score)
-            self.mean_class_scores.scatter_(0, torch.arange(max_class_batch).to(cls_scores.device), new_scores.clip(max=0.8))
+            self.mean_class_scores[:max_class_batch] = new_scores.clip(max=0.8)
 
 
         if (

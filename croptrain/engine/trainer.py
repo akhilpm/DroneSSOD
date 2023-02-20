@@ -624,7 +624,7 @@ class UBTeacherTrainer(DefaultTrainer):
             #joint_proposal_dict["proposals_pseudo_rpn"] = pesudo_proposals_rpn_unsup_w
             # Pseudo_labeling for ROI head (bbox location/objectness)
             pesudo_proposals_roih_unsup_w, avg_pseudo_gtboxes = self.process_pseudo_label(
-                proposals_roih_unsup_w, cur_threshold, "roih", "thresholding"
+                proposals_roih_unsup_w, 0.5, "roih", "thresholding"
             )
             joint_proposal_dict["proposals_pseudo_roih"] = pesudo_proposals_roih_unsup_w
             #experiment.log_metric("avg_no_pseudo_gt_boxes", avg_no_pseudo_gt_boxes, step=self.iter)
@@ -662,7 +662,7 @@ class UBTeacherTrainer(DefaultTrainer):
                     with torch.no_grad():
                         _, _, proposals_roih_cluster_w, _ = self.model_teacher(all_weak_cluster_dicts, branch="unsup_data_weak")
                     pesudo_proposals_roih_cluster_w, _ = self.process_pseudo_label(
-                        proposals_roih_cluster_w, 0.6, "roih", "thresholding", False
+                        proposals_roih_cluster_w, cur_threshold, "roih", "thresholding"
                     )
                     #consider only the top N pseudo GT per crop
                     #print([len(item) for item in pesudo_proposals_roih_cluster_w])
@@ -670,8 +670,8 @@ class UBTeacherTrainer(DefaultTrainer):
                     all_strong_cluster_dicts = self.add_label(all_strong_cluster_dicts, pesudo_proposals_roih_cluster_w)
                     all_weak_cluster_dicts = self.add_label(all_weak_cluster_dicts, pesudo_proposals_roih_cluster_w)
                     nonzero_instances = [len(instance)!=0 for instance in pesudo_proposals_roih_cluster_w]
-                    all_strong_cluster_dicts = list(compress(all_strong_cluster_dicts, nonzero_instances))
-                    all_weak_cluster_dicts = list(compress(all_weak_cluster_dicts, nonzero_instances))
+                    all_strong_cluster_dicts = list(compress(all_strong_cluster_dicts, nonzero_instances))[:self.cfg.SOLVER.IMG_PER_BATCH_UNLABEL]
+                    all_weak_cluster_dicts = list(compress(all_weak_cluster_dicts, nonzero_instances))[:self.cfg.SOLVER.IMG_PER_BATCH_UNLABEL]
 
                     #if random.random()>0.7:
                     #all_weak_cluster_dicts[0]["image"] = all_weak_cluster_dicts[0]["image"].to(torch.uint8)
@@ -682,15 +682,15 @@ class UBTeacherTrainer(DefaultTrainer):
                 all_label_data, branch="supervised"
             )
             record_dict.update(record_all_label_data)
-            record_all_unlabel_data, _, _, _ = self.model(
-                all_unlabel_data, branch="supervised"
-            )
-            new_record_all_unlabel_data = {}
-            for key in record_all_unlabel_data.keys():
-                new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[key]
-            record_dict.update(new_record_all_unlabel_data)
+            #record_all_unlabel_data, _, _, _ = self.model(
+            #    all_unlabel_data, branch="supervised"
+            #)
+            #new_record_all_unlabel_data = {}
+            #for key in record_all_unlabel_data.keys():
+            #    new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[key]
+            #record_dict.update(new_record_all_unlabel_data)
 
-            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP and self.iter>30000: 
+            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP and self.iter>20000: 
                 if len(all_weak_cluster_dicts)>0:
                     record_all_cluster_data, _, _, _ = self.model(
                         all_strong_cluster_dicts, branch="supervised"
