@@ -352,7 +352,7 @@ class UBTeacherTrainer(DefaultTrainer):
 
         # create an student model
         model = self.build_model(cfg)
-        class_scores_init = torch.zeros(cfg.MODEL.ROI_HEADS.NUM_CLASSES).fill_(1 / cfg.MODEL.ROI_HEADS.NUM_CLASSES).to(model.device)
+        class_scores_init = torch.zeros(cfg.MODEL.ROI_HEADS.NUM_CLASSES).fill_(0.4).to(model.device)
         model.roi_heads.mean_class_scores = torch.nn.parameter.Parameter(class_scores_init, requires_grad=False)
         model.roi_heads.ema_class_score = cfg.SEMISUPNET.EMA_CLS_SCORE
         optimizer = self.build_optimizer(cfg, model)
@@ -481,7 +481,7 @@ class UBTeacherTrainer(DefaultTrainer):
     # =====================================================
     # ================== Pseduo-labeling ==================
     # =====================================================
-    def threshold_bbox(self, proposal_bbox_inst, thres=0.7, proposal_type="roih"):
+    def threshold_bbox(self, proposal_bbox_inst, thres=0.7, proposal_type="roih", flag=True):
         if proposal_type == "rpn":
             valid_map = proposal_bbox_inst.objectness_logits > thres
 
@@ -499,12 +499,14 @@ class UBTeacherTrainer(DefaultTrainer):
                 valid_map
             ]
         elif proposal_type == "roih":
-            #valid_map = proposal_bbox_inst.scores > thres
-            if comm.get_world_size() > 1:
-                class_threshs = self.model.module.roi_heads.mean_class_scores[proposal_bbox_inst.pred_classes]
+            if flag:
+                valid_map = proposal_bbox_inst.scores > thres
             else:
-                class_threshs = self.model.roi_heads.mean_class_scores[proposal_bbox_inst.pred_classes]    
-            valid_map = proposal_bbox_inst.scores > class_threshs
+                if comm.get_world_size() > 1:
+                    class_threshs = self.model.module.roi_heads.mean_class_scores[proposal_bbox_inst.pred_classes]
+                else:
+                    class_threshs = self.model.roi_heads.mean_class_scores[proposal_bbox_inst.pred_classes]    
+                valid_map = proposal_bbox_inst.scores > class_threshs
 
             # create instances containing boxes and gt_classes
             image_shape = proposal_bbox_inst.image_size
@@ -518,17 +520,18 @@ class UBTeacherTrainer(DefaultTrainer):
             new_proposal_inst.gt_boxes = new_boxes
             new_proposal_inst.gt_classes = proposal_bbox_inst.pred_classes[valid_map]
             new_proposal_inst.scores = proposal_bbox_inst.scores[valid_map]
+            new_proposal_inst.pseudo_gt = valid_map.new_ones(len(new_boxes))
 
         return new_proposal_inst
 
-    def process_pseudo_label(self, proposals_rpn_unsup_k, cur_threshold, proposal_type, psedo_label_method=""):
+    def process_pseudo_label(self, proposals_rpn_unsup_k, cur_threshold, proposal_type, psedo_label_method="", flag=True):
         list_instances = []
         num_proposal_output = 0.0
         for proposal_bbox_inst in proposals_rpn_unsup_k:
             # thresholding
             if psedo_label_method == "thresholding":
                 proposal_bbox_inst = self.threshold_bbox(
-                    proposal_bbox_inst, thres=cur_threshold, proposal_type=proposal_type
+                    proposal_bbox_inst, thres=cur_threshold, proposal_type=proposal_type, flag=flag
                 )
             else:
                 raise ValueError("Unkown pseudo label boxes methods")
@@ -638,7 +641,7 @@ class UBTeacherTrainer(DefaultTrainer):
             all_label_data = label_data_s + label_data_w
             all_unlabel_data = unlabel_data_s
 
-            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP:
+            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP and self.iter>20000:
                 cluster_class = self.cfg.MODEL.ROI_HEADS.NUM_CLASSES - 1
                 all_weak_cluster_dicts, all_strong_cluster_dicts = [], []
                 for k, pseudo_proposals_per_image in enumerate(pesudo_proposals_roih_unsup_w):
@@ -659,11 +662,11 @@ class UBTeacherTrainer(DefaultTrainer):
                     with torch.no_grad():
                         _, _, proposals_roih_cluster_w, _ = self.model_teacher(all_weak_cluster_dicts, branch="unsup_data_weak")
                     pesudo_proposals_roih_cluster_w, _ = self.process_pseudo_label(
-                        proposals_roih_cluster_w, 0.6, "roih", "thresholding"
+                        proposals_roih_cluster_w, 0.6, "roih", "thresholding", False
                     )
                     #consider only the top N pseudo GT per crop
                     #print([len(item) for item in pesudo_proposals_roih_cluster_w])
-                    pesudo_proposals_roih_cluster_w = self.filter_gt_instances(pesudo_proposals_roih_cluster_w)
+                    #pesudo_proposals_roih_cluster_w = self.filter_gt_instances(pesudo_proposals_roih_cluster_w)
                     all_strong_cluster_dicts = self.add_label(all_strong_cluster_dicts, pesudo_proposals_roih_cluster_w)
                     all_weak_cluster_dicts = self.add_label(all_weak_cluster_dicts, pesudo_proposals_roih_cluster_w)
                     nonzero_instances = [len(instance)!=0 for instance in pesudo_proposals_roih_cluster_w]
@@ -687,7 +690,7 @@ class UBTeacherTrainer(DefaultTrainer):
                 new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[key]
             record_dict.update(new_record_all_unlabel_data)
 
-            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP: 
+            if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP and self.iter>30000: 
                 if len(all_weak_cluster_dicts)>0:
                     record_all_cluster_data, _, _, _ = self.model(
                         all_strong_cluster_dicts, branch="supervised"

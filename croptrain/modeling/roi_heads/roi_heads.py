@@ -115,7 +115,7 @@ class StandardROIHeadsPseudoLab(StandardROIHeads):
         predictions = self.box_predictor(box_features)
         del box_features
 
-        if targets:
+        if targets and not targets[0].has("pseudo_gt"):
             target_features = self.box_pooler(features, [x.gt_boxes for x in targets])
             target_features = self.box_head(target_features)
             cls_scores = F.softmax(self.box_predictor(target_features)[0], dim=-1).detach()

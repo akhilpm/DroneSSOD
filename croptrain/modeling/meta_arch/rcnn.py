@@ -4,6 +4,7 @@ from detectron2.modeling.meta_arch.build import META_ARCH_REGISTRY
 from detectron2.modeling.meta_arch.rcnn import GeneralizedRCNN
 from detectron2.structures.boxes import Boxes
 from typing import Dict, List, Optional
+from utils.crop_utils import project_boxes_to_image
 
 @META_ARCH_REGISTRY.register()
 class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
@@ -115,28 +116,3 @@ class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
                 boxes[0] = torch.cat([boxes[0], boxes_crop], dim=0)
                 scores[0] = torch.cat([scores[0], scores_crop[0]], dim=0)
         return boxes, scores
-
-def project_boxes_to_image(data_dict, crop_sizes, boxes):
-    num_bbox_reg_classes = boxes.shape[1] // 4
-    output_height, output_width = data_dict.get("height"), data_dict.get("width")
-    new_size = (output_height, output_width)
-    scale_x, scale_y = (
-        output_width / crop_sizes[1],
-        output_height / crop_sizes[0],
-    )
-    boxes = Boxes(boxes.reshape(-1, 4))
-    boxes.scale(scale_x, scale_y)
-    boxes.clip(new_size)
-    boxes = boxes.tensor
-
-    #shift to the proper position of the crop in the image
-    if not data_dict["full_image"]:
-        if data_dict["two_stage_crop"]:
-            x1, y1 = data_dict['inner_crop_area'][0], data_dict['inner_crop_area'][1]
-            ref_point = torch.tensor([x1, y1, x1, y1]).to(boxes.device)
-            boxes = boxes + ref_point
-        x1, y1 = data_dict["crop_area"][0], data_dict["crop_area"][1]
-        ref_point = torch.tensor([x1, y1, x1, y1]).to(boxes.device)
-        boxes = boxes + ref_point
-    boxes = boxes.view(-1, num_bbox_reg_classes * 4) # R x C.4
-    return boxes

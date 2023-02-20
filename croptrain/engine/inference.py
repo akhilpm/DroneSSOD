@@ -17,6 +17,7 @@ from detectron2.utils.logger import log_every_n_seconds
 from detectron2.structures.boxes import Boxes, pairwise_iou
 from croptrain.data.detection_utils import read_image
 from utils.box_utils import compute_crops
+from utils.crop_utils import get_dict_from_crops
 from detectron2.data.build import get_detection_dataset_dicts
 from detectron2.modeling.roi_heads.fast_rcnn import fast_rcnn_inference
 logging.basicConfig(level=logging.INFO)
@@ -168,33 +169,6 @@ def inference_context(model):
     model.eval()
     yield
     model.train(training_mode)
-
-
-def get_dict_from_crops(crops, input_dict, CROPSIZE):
-    if len(crops)==0:
-        return []
-    if isinstance(crops, Instances):
-        crops = crops.pred_boxes.tensor.cpu().numpy().astype(np.int32)
-    transform = Resize(CROPSIZE)
-    crop_dicts, crop_scales = [], []
-    for i in range(len(crops)):
-        x1, y1, x2, y2 = crops[i, 0], crops[i, 1], crops[i, 2], crops[i, 3]
-        crop_size_min = min(x2-x1, y2-y1)
-        if crop_size_min<=0:
-            continue
-        crop_dict = copy.deepcopy(input_dict)
-        crop_dict['full_image'] = False
-        crop_dict['crop_area'] = np.array([x1, y1, x2, y2])
-        crop_region = read_image(crop_dict)
-        crop_region = torch.as_tensor(np.ascontiguousarray(crop_region.transpose(2, 0, 1)))
-        crop_region = transform(crop_region)
-        crop_dict["image"] = crop_region
-        crop_dict["height"] = (y2-y1)
-        crop_dict["width"] = (x2-x1)
-        crop_dicts.append(crop_dict)
-        crop_scales.append(float(CROPSIZE)/crop_size_min)
-
-    return crop_dicts
 
 
 def merge_cluster_boxes(cluster_boxes, cfg):
