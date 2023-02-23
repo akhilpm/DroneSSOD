@@ -15,8 +15,6 @@ from detectron2.structures.instances import Instances
 from utils.box_utils import bbox_inside_old
 from utils.plot_utils import plot_detections
 from detectron2.utils.logger import log_every_n_seconds
-from detectron2.structures.boxes import Boxes, pairwise_iou
-from croptrain.data.detection_utils import read_image
 from utils.box_utils import compute_crops
 from utils.crop_utils import get_dict_from_crops
 from detectron2.data.build import get_detection_dataset_dicts
@@ -174,31 +172,4 @@ def inference_context(model):
     yield
     model.train(training_mode)
 
-def merge_cluster_boxes(cluster_boxes, cfg):
-    if len(cluster_boxes)==0:
-        return None
-    if len(cluster_boxes)==1:
-        box = cluster_boxes.pred_boxes.tensor.cpu().numpy().astype(np.int32).reshape(1, -1)
-        return box
 
-    overlaps = pairwise_iou(cluster_boxes.pred_boxes, cluster_boxes.pred_boxes)
-    connectivity = (overlaps > cfg.CROPTRAIN.CLUSTER_THRESHOLD)
-    new_boxes = np.zeros((0, 4), dtype=np.int32)
-    while len(connectivity)>0:
-        connections = connectivity.sum(dim=1)
-        max_connected, max_connections = torch.argmax(connections), torch.max(connections)
-        cluster_components = torch.nonzero(connectivity[max_connected]).view(-1)
-        other_boxes = torch.nonzero(~connectivity[max_connected]).view(-1)
-        if max_connections==1:
-            box = cluster_boxes.pred_boxes.tensor[max_connected]
-            x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
-        else:
-            cluster_members = cluster_boxes.pred_boxes.tensor[cluster_components]
-            x1, y1 = cluster_members[:, 0].min(), cluster_members[:, 1].min()
-            x2, y2 = cluster_members[:, 2].max(), cluster_members[:, 3].max()
-        crop_area = np.array([int(x1), int(y1), int(x2), int(y2)]).astype(np.int32)
-        new_boxes = np.append(new_boxes, crop_area.reshape(1, -1), axis=0)
-        connectivity = connectivity[:, other_boxes]
-        connectivity = connectivity[other_boxes, :]
-
-    return new_boxes

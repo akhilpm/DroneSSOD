@@ -17,8 +17,8 @@ def add_ubteacher_config(cfg):
     _C.SOLVER.IMG_PER_BATCH_UNLABEL = 1
     _C.SOLVER.FACTOR_LIST = (1,)
 
-    _C.DATASETS.TRAIN_LABEL = ("coco_2017_train",)
-    _C.DATASETS.TRAIN_UNLABEL = ("coco_2017_train",)
+    _C.DATASETS.TRAIN_LABEL = ("visdrone_2019_train",)
+    _C.DATASETS.TRAIN_UNLABEL = ("visdrone_2019_train",)
     _C.DATASETS.CROSS_DATASET = False
     _C.TEST.EVALUATOR = "COCOeval"
 
@@ -35,7 +35,6 @@ def add_ubteacher_config(cfg):
     _C.SEMISUPNET.TEACHER_UPDATE_ITER = 1
     _C.SEMISUPNET.BURN_UP_STEP = 12000
     _C.SEMISUPNET.EMA_KEEP_RATE = 0.0
-    _C.SEMISUPNET.EMA_CLS_SCORE = 0.9996
     _C.SEMISUPNET.UNSUP_LOSS_WEIGHT = 4.0
     _C.SEMISUPNET.SUP_LOSS_WEIGHT = 0.5
     _C.SEMISUPNET.LOSS_WEIGHT_TYPE = "standard"

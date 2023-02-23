@@ -352,9 +352,6 @@ class UBTeacherTrainer(DefaultTrainer):
 
         # create an student model
         model = self.build_model(cfg)
-        class_scores_init = torch.zeros(cfg.MODEL.ROI_HEADS.NUM_CLASSES).fill_(0.4).to(model.device)
-        model.roi_heads.mean_class_scores = torch.nn.parameter.Parameter(class_scores_init, requires_grad=False)
-        model.roi_heads.ema_class_score = cfg.SEMISUPNET.EMA_CLS_SCORE
         optimizer = self.build_optimizer(cfg, model)
 
         # create an teacher model
@@ -481,7 +478,7 @@ class UBTeacherTrainer(DefaultTrainer):
     # =====================================================
     # ================== Pseduo-labeling ==================
     # =====================================================
-    def threshold_bbox(self, proposal_bbox_inst, thres=0.7, proposal_type="roih", flag=True):
+    def threshold_bbox(self, proposal_bbox_inst, thres=0.7, proposal_type="roih"):
         if proposal_type == "rpn":
             valid_map = proposal_bbox_inst.objectness_logits > thres
 
@@ -499,14 +496,7 @@ class UBTeacherTrainer(DefaultTrainer):
                 valid_map
             ]
         elif proposal_type == "roih":
-            if flag:
-                valid_map = proposal_bbox_inst.scores > thres
-            else:
-                if comm.get_world_size() > 1:
-                    class_threshs = self.model.module.roi_heads.mean_class_scores[proposal_bbox_inst.pred_classes]
-                else:
-                    class_threshs = self.model.roi_heads.mean_class_scores[proposal_bbox_inst.pred_classes]    
-                valid_map = proposal_bbox_inst.scores > class_threshs
+            valid_map = proposal_bbox_inst.scores > thres
 
             # create instances containing boxes and gt_classes
             image_shape = proposal_bbox_inst.image_size
@@ -520,11 +510,10 @@ class UBTeacherTrainer(DefaultTrainer):
             new_proposal_inst.gt_boxes = new_boxes
             new_proposal_inst.gt_classes = proposal_bbox_inst.pred_classes[valid_map]
             new_proposal_inst.scores = proposal_bbox_inst.scores[valid_map]
-            new_proposal_inst.pseudo_gt = valid_map.new_ones(len(new_boxes))
 
         return new_proposal_inst
 
-    def process_pseudo_label(self, proposals_rpn_unsup_k, cur_threshold, proposal_type, psedo_label_method="", flag=True):
+    def process_pseudo_label(self, proposals_rpn_unsup_k, cur_threshold, proposal_type, psedo_label_method=""):
         list_instances = []
         num_proposal_output = 0.0
         for proposal_bbox_inst in proposals_rpn_unsup_k:
@@ -562,11 +551,6 @@ class UBTeacherTrainer(DefaultTrainer):
         data = next(self._trainer._data_loader_iter)
         # data_q and data_k from different augmentations (q:strong, k:weak)
         # label_strong, label_weak, unlabed_strong, unlabled_weak
-        if self.iter % self.cfg.TEST.EVAL_PERIOD==0:
-            if comm.get_world_size() > 1:
-                print(self.model.module.roi_heads.mean_class_scores)
-            else:
-                print(self.model.roi_heads.mean_class_scores)
 
         label_data_s, label_data_w, unlabel_data_s, unlabel_data_w = data
         data_time = time.perf_counter() - start
@@ -624,7 +608,7 @@ class UBTeacherTrainer(DefaultTrainer):
             #joint_proposal_dict["proposals_pseudo_rpn"] = pesudo_proposals_rpn_unsup_w
             # Pseudo_labeling for ROI head (bbox location/objectness)
             pesudo_proposals_roih_unsup_w, avg_pseudo_gtboxes = self.process_pseudo_label(
-                proposals_roih_unsup_w, 0.5, "roih", "thresholding"
+                proposals_roih_unsup_w, cur_threshold, "roih", "thresholding"
             )
             joint_proposal_dict["proposals_pseudo_roih"] = pesudo_proposals_roih_unsup_w
             #experiment.log_metric("avg_no_pseudo_gt_boxes", avg_no_pseudo_gt_boxes, step=self.iter)
@@ -682,13 +666,13 @@ class UBTeacherTrainer(DefaultTrainer):
                 all_label_data, branch="supervised"
             )
             record_dict.update(record_all_label_data)
-            #record_all_unlabel_data, _, _, _ = self.model(
-            #    all_unlabel_data, branch="supervised"
-            #)
-            #new_record_all_unlabel_data = {}
-            #for key in record_all_unlabel_data.keys():
-            #    new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[key]
-            #record_dict.update(new_record_all_unlabel_data)
+            record_all_unlabel_data, _, _, _ = self.model(
+                all_unlabel_data, branch="supervised"
+            )
+            new_record_all_unlabel_data = {}
+            for key in record_all_unlabel_data.keys():
+                new_record_all_unlabel_data[key + "_pseudo"] = record_all_unlabel_data[key]
+            record_dict.update(new_record_all_unlabel_data)
 
             if self.cfg.SEMISUPNET.AUG_CROPS_UNSUP and self.iter>20000: 
                 if len(all_weak_cluster_dicts)>0:
@@ -936,36 +920,6 @@ class UBTeacherTrainer(DefaultTrainer):
         if len(results) == 1:
             results = list(results.values())[0] 
         return results
-
-
-    def get_weak_strong_dict_from_crops(self, crops, crop_dicts, input_dict, inner_crop=False):
-        crop_dicts_weak = []
-        crop_dicts_strong = []
-        for i in range(min(len(crops), 5)):
-            curr_crop = crops[i]
-            x1, y1, x2, y2 = curr_crop[0], curr_crop[1], curr_crop[2], curr_crop[3]
-            crop_size_min = min(x2-x1, y2-y1)
-            if crop_size_min<=0:
-                continue
-            crop_dict = copy.deepcopy(input_dict)
-            crop_dict['full_image'] = False
-            crop_dict["height"] = (y2-y1)
-            crop_dict["width"] = (x2-x1)
-            if inner_crop:
-                crop_dict["two_stage_crop"] = True
-                crop_dict["inner_crop_area"] = np.array([x1, y1, x2, y2]).astype(np.int32)
-            else:    
-                crop_dict['crop_area'] = np.array([x1, y1, x2, y2]).astype(np.int32)
-            if "instances" in crop_dict:
-                del crop_dict["instances"]
-            if "annotations" in crop_dict:
-                del crop_dict["annotations"]
-            crop_dict_strong, crop_dict_weak = self.mapper(crop_dict)
-            #crop_dict_strong, crop_dict_weak = self.mapper(crop_dicts[i])
-            crop_dicts_weak.append(crop_dict_weak)
-            crop_dicts_strong.append(crop_dict_strong)
-        return crop_dicts_weak, crop_dicts_strong
-
 
     def get_gtcrops(self, image_dict):
         file_name = image_dict["file_name"]

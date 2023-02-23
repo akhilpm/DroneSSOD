@@ -27,7 +27,7 @@ from croptrain.data.common import (
 )
 from croptrain.data.dataset_mapper import DatasetMapperTwoCropSeparate
 from croptrain.data.dataset_mapper import DatasetMapperDensityCrop
-
+from utils.crop_utils import get_dict_from_crops
 
 """
 This file contains the default logic to build a dataloader for training or testing.
@@ -44,6 +44,10 @@ def divide_label_unlabel(dataset_dicts, cfg):
     num_label = int(cfg.DATALOADER.SUP_PERCENT / 100.0 * num_all)
     shuffled_images = [random_perm_data["imagenames"][x] for x in random_perm]   
     labeled_image_ids = shuffled_images[:num_label]
+    if cfg.SEMISUPNET.AUG_CROPS_UNSUP:
+        crop_file = os.path.join("dataseed", dataset_name + "_crops_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
+        with open(crop_file) as f:
+            crop_data = json.load(f)
     label_dicts = []
     unlabel_dicts = []
 
@@ -53,8 +57,18 @@ def divide_label_unlabel(dataset_dicts, cfg):
             label_dicts.append(dataset_dicts[i])
         elif dataset_dicts[i]['full_image']:
             unlabel_dicts.append(dataset_dicts[i])
+            if cfg.SEMISUPNET.AUG_CROPS_UNSUP:
+                crop_boxes = np.array(crop_data[file_name])
+                if len(crop_boxes)>0:
+                    crop_dicts = get_dict_from_crops(crop_boxes, dataset_dicts[i], with_image=False)
+                    unlabel_dicts += crop_dicts
         elif (dataset_dicts[i].get("inner_crop_area")!=None and dataset_dicts[i]["two_stage_crop"]==False):
             unlabel_dicts.append(dataset_dicts[i])
+            if cfg.SEMISUPNET.AUG_CROPS_UNSUP:
+                crop_boxes = np.array(crop_data[file_name])
+                if len(crop_boxes)>0:
+                    crop_dicts = get_dict_from_crops(crop_boxes, dataset_dicts[i], with_image=False)
+                    unlabel_dicts += crop_dicts
         else:
             continue   
     return label_dicts, unlabel_dicts

@@ -16,7 +16,6 @@ from detectron2.modeling.roi_heads import (
 )
 from detectron2.modeling.roi_heads.fast_rcnn import FastRCNNOutputLayers
 from croptrain.modeling.roi_heads.fast_rcnn import FastRCNNFocaltLossOutputLayers
-import torch.nn.functional as F
 
 import numpy as np
 from detectron2.modeling.poolers import ROIPooler
@@ -114,25 +113,6 @@ class StandardROIHeadsPseudoLab(StandardROIHeads):
         box_features = self.box_head(box_features)
         predictions = self.box_predictor(box_features)
         del box_features
-
-        if targets and not targets[0].has("pseudo_gt"):
-            target_features = self.box_pooler(features, [x.gt_boxes for x in targets])
-            target_features = self.box_head(target_features)
-            cls_scores = F.softmax(self.box_predictor(target_features)[0], dim=-1).detach()
-            del target_features
-            """ fetch scores for each gt class and update the mean scores of each class """
-            gt_classes = torch.cat([x.gt_classes for x in targets])
-            cls_scores = cls_scores.gather(1, gt_classes.view(-1, 1))            
-            unique_classes, label_counts = gt_classes.unique(return_counts=True)
-            max_class_batch = gt_classes.max() + 1
-            results = cls_scores.new_zeros(max_class_batch)
-            results.index_add_(0, gt_classes, cls_scores)
-            counts = label_counts.new_ones(max_class_batch)
-            counts[unique_classes] = label_counts
-            results /= counts
-            new_scores = self.mean_class_scores[:max_class_batch] * self.ema_class_score + results * (1-self.ema_class_score)
-            self.mean_class_scores[:max_class_batch] = new_scores.clip(max=0.8)
-
 
         if (
             self.training and compute_loss
