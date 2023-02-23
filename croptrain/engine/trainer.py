@@ -520,7 +520,7 @@ class UBTeacherTrainer(DefaultTrainer):
             # thresholding
             if psedo_label_method == "thresholding":
                 proposal_bbox_inst = self.threshold_bbox(
-                    proposal_bbox_inst, thres=cur_threshold, proposal_type=proposal_type, flag=flag
+                    proposal_bbox_inst, thres=cur_threshold, proposal_type=proposal_type
                 )
             else:
                 raise ValueError("Unkown pseudo label boxes methods")
