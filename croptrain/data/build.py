@@ -226,6 +226,7 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
 
     label_dataset = DatasetFromList(label_dicts, copy=False)
     unlabel_dataset = DatasetFromList(unlabel_dicts, copy=False)
+    print("Labeled samples:{}, Unlabeled samples:{} ".format(len(label_dicts), len(unlabel_dicts)))
     if mapper is None:
         if cfg.CROPTRAIN.USE_CROPS:
             mapper = DatasetMapperTwoCropSeparate(cfg, True)

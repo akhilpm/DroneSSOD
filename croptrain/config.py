@@ -68,4 +68,13 @@ def add_croptrainer_config(cfg):
 
     _C.MODEL.CUSTOM.CLS_WEIGHTS = []
     _C.MODEL.CUSTOM.REG_WEIGHTS = []
-     
+
+
+def add_fcos_config(cfg):
+    _C = cfg
+    _C.MODEL.FCOS = CN()
+    _C.MODEL.FCOS.NORM = "GN"
+    _C.MODEL.FCOS.NUM_CLASSES = 80
+    _C.MODEL.FCOS.NUM_CONVS = 4
+    _C.MODEL.FCOS.SCORE_THRESH_TEST = 0.01
+    _C.MODEL.FCOS.IN_FEATURES = ["p3", "p4", "p5", "p6", "p7"]

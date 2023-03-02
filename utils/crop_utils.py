@@ -3,10 +3,10 @@ import numpy as np
 import torch
 from torchvision.transforms import Resize
 from detectron2.structures.instances import Instances
-from croptrain.data.detection_utils import read_image
 from detectron2.structures.boxes import Boxes, pairwise_iou
 
 def get_dict_from_crops(crops, input_dict, CROPSIZE=512, inner_crop=False, with_image=True):
+    from croptrain.data.detection_utils import read_image
     if len(crops)==0:
         return []
     if isinstance(crops, Instances):

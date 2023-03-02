@@ -1,3 +1,6 @@
+from croptrain.modeling.meta_arch.rcnn import TwoStagePseudoLabGeneralizedRCNN
+from croptrain.modeling.roi_heads.roi_heads import StandardROIHeadsPseudoLab
+from croptrain.modeling.proposal_generator.rpn import PseudoLabRPN
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from croptrain import add_croptrainer_config, add_ubteacher_config
@@ -11,6 +14,7 @@ import datetime
 import time
 import copy
 import cv2
+import json
 from utils.crop_utils import get_dict_from_crops
 from contextlib import ExitStack, contextmanager
 from detectron2.structures.instances import Instances
@@ -24,6 +28,19 @@ from croptrain.data.datasets.visdrone import compute_crops
 logging.basicConfig(level = logging.INFO)
 
 
+@contextmanager
+def inference_context(model):
+    """
+    A context where the model is temporarily changed to eval mode,
+    and restored to previous mode afterwards.
+
+    Args:
+        model: a torch Module
+    """
+    training_mode = model.training
+    model.eval()
+    yield
+    model.train(training_mode)
 
 
 def inference_crops(model, data_loader, cfg):
@@ -40,21 +57,27 @@ def inference_crops(model, data_loader, cfg):
         stack.enter_context(torch.no_grad())
 
         start_data_time = time.perf_counter()
+        count = 0
+        n_crops = 0
         for idx, inputs in enumerate(data_loader):
             outputs = model(inputs)
             cluster_class_indices = (outputs[0]["instances"].pred_classes==cluster_class)
             cluster_boxes = outputs[0]["instances"][cluster_class_indices]
-            cluster_boxes = cluster_boxes[cluster_boxes.scores>self.cfg.SEMISUPNET.BBOX_THRESHOLD]
+            cluster_boxes = cluster_boxes[cluster_boxes.scores>0.4]
             file_name = inputs[0]["file_name"].split('/')[-1]
             if idx%100==0:
                 print("processing {}th image".format(idx))
             if len(cluster_boxes)>0:
                 cluster_boxes = cluster_boxes.pred_boxes.tensor.cpu().numpy().astype(np.int32).tolist()
                 crop_storage[file_name] = cluster_boxes
-            else:    
+                count += 1
+                n_crops += len(cluster_boxes)
+            else:
                 crop_storage[file_name] = []
     with open(crop_file, "w") as f:
         json.dump(crop_storage, f)
+    print("crops present in {}/{} images".format(count, len(data_loader)))
+    print("number of crops is {} ".format(n_crops))
 
 
 def main():
@@ -82,7 +105,7 @@ def main():
         ensem_ts_model = EnsembleTSModel(model_teacher, model)
         DetectionCheckpointer(
             ensem_ts_model, save_dir=cfg.OUTPUT_DIR
-        ).resume_or_load(cfg.MODEL.WEIGHTS, resume=args.resume)
+        ).resume_or_load(cfg.MODEL.WEIGHTS, resume=False)
     else:
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(cfg.MODEL.WEIGHTS, resume=False)
 

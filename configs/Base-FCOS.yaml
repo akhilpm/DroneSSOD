@@ -1,10 +1,8 @@
 MODEL:
-  META_ARCHITECTURE: "TwoStagePseudoLabGeneralizedRCNN"
+  META_ARCHITECTURE: "CROP_FCOS"
   WEIGHTS: "/home/akhil135/PhD/DroneDetectron2/pretrained_models/R-50.pkl"
   BACKBONE:
     NAME: "build_retinanet_resnet_fpn_backbone"
-  PROPOSAL_GENERATOR:
-    NAME: "PseudoLabRPN"    
   RESNETS:
     OUT_FEATURES: ["res3", "res4", "res5"]
     DEPTH: 50
@@ -14,8 +12,6 @@ MODEL:
     SIZES: [[32], [64], [128], [256], [512]]  # One size for each in feature map
     ASPECT_RATIOS: [[0.5, 1.0, 2.0]]  # Three aspect ratios (same for all in feature maps)
   RPN:
-    POSITIVE_FRACTION: 0.25
-    LOSS: "CrossEntropy"
     IN_FEATURES: ["p3", "p4", "p5", "p6", "p7"]
     PRE_NMS_TOPK_TRAIN: 2000  # Per FPN level
     PRE_NMS_TOPK_TEST: 1000  # Per FPN level
@@ -24,9 +20,12 @@ MODEL:
     # which is approximately 1000 proposals per-image since the default batch size for FPN is 2.
     POST_NMS_TOPK_TRAIN: 1000
     POST_NMS_TOPK_TEST: 1000
+  FCOS:
+    IN_FEATURES: ["p3", "p4", "p5", "p6", "p7"]
+    NUM_CLASSES: 10
+    SCORE_THRESH_TEST: 0.001
   ROI_HEADS:
-    NAME: "StandardROIHeadsPseudoLab"
-    LOSS: "FocalLoss"
+    NAME: "StandardROIHeads"
     IN_FEATURES: ["p3", "p4", "p5", "p6", "p7"]
     NUM_CLASSES: 10
     SCORE_THRESH_TEST: 0.001
@@ -35,10 +34,6 @@ MODEL:
     NAME: "FastRCNNConvFCHead"
     NUM_FC: 2
     POOLER_RESOLUTION: 7
-  ROI_MASK_HEAD:
-    NAME: "MaskRCNNConvUpsampleHead"
-    NUM_CONV: 4
-    POOLER_RESOLUTION: 14
 
 DATASETS:
   TRAIN: ("visdrone_2019_train",)
@@ -46,29 +41,18 @@ DATASETS:
 DATALOADER:
   NUM_WORKERS: 4
   SUP_PERCENT: 10.0
-  USE_RANDOM_SPLIT: True
-  RANDOM_DATA_SEED: 42
-  SEED_PATH: "dataseed/visdrone_sup_5.0.txt"
-SEMISUPNET:
-  USE_SEMISUP: True
-  AUG_CROPS_UNSUP: True
-  BBOX_THRESHOLD: 0.6
-  TEACHER_UPDATE_ITER: 1
-  BURN_UP_STEP: 2000
-  EMA_KEEP_RATE: 0.9996
-  UNSUP_LOSS_WEIGHT: 4.0
 SOLVER:
   IMS_PER_BATCH: 8
   IMG_PER_BATCH_LABEL: 4
   IMG_PER_BATCH_UNLABEL: 4
   BASE_LR: 0.01
-  STEPS: (145000, 150000)
-  MAX_ITER: 155000
-  CHECKPOINT_PERIOD: 2000
+  STEPS: (3000, 5000)
+  MAX_ITER: 7000
+  CHECKPOINT_PERIOD: 700
   CLIP_GRADIENTS:
     ENABLED: True
     CLIP_TYPE: "norm"
-    CLIP_VALUE: 30.0
+    CLIP_VALUE: 35.0
 INPUT:
   MIN_SIZE_TRAIN: (800, 900, 1000, 1100, 1200)
   MAX_SIZE_TRAIN: 1999
@@ -76,7 +60,7 @@ INPUT:
   MAX_SIZE_TEST: 1999
 VERSION: 2
 TEST:
-  EVAL_PERIOD: 2000
+  EVAL_PERIOD: 200
   DETECTIONS_PER_IMAGE: 800
 CROPTRAIN:
-  USE_CROPS: True
+  USE_CROPS: False
