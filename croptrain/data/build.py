@@ -74,6 +74,21 @@ def divide_label_unlabel(dataset_dicts, cfg):
     return label_dicts, unlabel_dicts
 
 
+def divide_label_unlabel_supervised(dataset_dicts, cfg):
+    num_all = len(dataset_dicts)
+    num_label = int(cfg.DATALOADER.SUP_PERCENT/100.0*num_all)
+
+    # generate a permutation of images
+    random_perm_index = np.random.permutation(num_all)
+    label_dicts = []
+    unlabel_dicts = []
+    for i in range(len(dataset_dicts)):
+        if i < num_label:
+            label_dicts.append(dataset_dicts[random_perm_index[i]])
+        else:
+            unlabel_dicts.append(dataset_dicts[random_perm_index[i]])
+    return label_dicts, unlabel_dicts
+
 # uesed by supervised-only baseline trainer
 def build_detection_semisup_train_loader(cfg, mapper=None):
 
@@ -89,7 +104,7 @@ def build_detection_semisup_train_loader(cfg, mapper=None):
     )
 
     # Divide into labeled and unlabeled sets according to supervision percentage
-    label_dicts, unlabel_dicts = divide_label_unlabel(
+    label_dicts, unlabel_dicts = divide_label_unlabel_supervised(
         dataset_dicts,
         cfg
     )
