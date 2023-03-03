@@ -128,12 +128,12 @@ class CROP_FCOS(FCOS):
                     self.test_score_thresh, self.test_topk_candidates, images.image_sizes[0])
                 pred_crop.pred_boxes.tensor = project_boxes_to_image(cluster_dicts[img_idx], image_size, pred_crop.pred_boxes.tensor)
                 all_preds.append(pred_crop)
+            del features_crop    
 
         all_preds = Instances.cat(all_preds)
         keep = batched_nms(
             all_preds.pred_boxes.tensor, all_preds.scores, all_preds.pred_classes, self.test_nms_thresh
         )
-        del features_crop
         return all_preds[keep[: self.max_detections_per_image]]
 
 

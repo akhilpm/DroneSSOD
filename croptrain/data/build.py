@@ -180,24 +180,6 @@ def build_detection_test_loader(cfg, dataset_name, mapper=None):
     return data_loader
 
 
-def build_detection_croptest_loader(cfg, crop_dicts, mapper=None):
-    dataset = DatasetFromList(crop_dicts)
-    if mapper is None:
-        mapper = DatasetMapper(cfg, False)
-    dataset = MapDataset(dataset, mapper)
-
-    sampler = InferenceSampler(len(dataset))
-    batch_sampler = torch.utils.data.sampler.BatchSampler(sampler, 1, drop_last=False)
-
-    data_loader = torch.utils.data.DataLoader(
-        dataset,
-        num_workers=cfg.DATALOADER.NUM_WORKERS,
-        batch_sampler=batch_sampler,
-        collate_fn=trivial_batch_collator,
-    )
-    return data_loader
-
-
 # uesed by unbiased teacher trainer
 def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
     if cfg.DATASETS.CROSS_DATASET:  # cross-dataset (e.g., coco-additional)

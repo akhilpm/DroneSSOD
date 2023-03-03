@@ -30,6 +30,7 @@ from detectron2.evaluation import DatasetEvaluator, print_csv_format
 from contextlib import ExitStack, contextmanager
 from utils.plot_utils import plot_detections
 from croptrain.engine.inference import inference_with_crops
+from croptrain.engine import inference_fcos
 from croptrain.data.build import (
     build_detection_semisup_train_loader,
     build_detection_test_loader,
@@ -283,8 +284,11 @@ class BaselineTrainer(DefaultTrainer):
                     continue
             if "dota" in cfg.DATASETS.TEST[0]:
                 results_i = inference_dota(model, data_loader, evaluator, cfg, iter)
-            else:    
-                results_i = inference_with_crops(model, data_loader, evaluator, cfg, iter)
+            else:
+                if cfg.MODEL.META_ARCHITECTURE[-4:]=="FCOS":
+                    results_i = inference_fcos.inference_with_crops(model, data_loader, evaluator, cfg, iter)
+                else:
+                    results_i = inference_with_crops(model, data_loader, evaluator, cfg, iter)
             results[dataset_name] = results_i
             if comm.is_main_process():
                 assert isinstance(

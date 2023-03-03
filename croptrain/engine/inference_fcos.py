@@ -56,7 +56,7 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
     total_data_time = 0
     total_compute_time = 0
     total_eval_time = 0
-    cluster_class = cfg.MODEL.ROI_HEADS.NUM_CLASSES - 1
+    cluster_class = cfg.MODEL.FCOS.NUM_CLASSES - 1
     with ExitStack() as stack:
         if isinstance(model, torch.nn.Module):
             stack.enter_context(inference_context(model))
