@@ -155,6 +155,7 @@ def load_dota_instances(dataset_name, data_dir, cfg, is_train, extra_annotation_
         record["full_image"] = True
         record["crop_area"] = np.array([-1, -1, -1, -1], dtype=np.float32)
         record["two_stage_crop"] = False
+        record["need_cropping"] = True
 
         objs = []
         for anno in anno_dict_list:

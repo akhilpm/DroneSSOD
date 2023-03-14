@@ -72,24 +72,8 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
                 total_eval_time = 0
 
             start_compute_time = time.perf_counter()
-            image_shapes = [(item.get("height"), item.get("width")) for item in inputs]
-            outputs = model(inputs)
-            cluster_class_indices = (outputs[0]["instances"].pred_classes==cluster_class)
-            cluster_boxes = outputs[0]["instances"][cluster_class_indices]
-            cluster_boxes = cluster_boxes[cluster_boxes.scores>0.7]
-
-            #_, clus_dicts = compute_crops(dataset_dicts[idx], cfg)
-            #cluster_boxes = np.array([item['crop_area'] for item in clus_dicts]).reshape(-1, 4)
-            
-            if len(cluster_boxes)!=0:
-                #cluster_boxes = merge_cluster_boxes(cluster_boxes, cfg)
-                cluster_dicts = get_dict_from_crops(cluster_boxes, inputs[0], cfg.CROPTEST.CROPSIZE)
-                pred_instances = model(inputs, cluster_dicts, infer_on_crops=True)
-            else:
-                pred_instances = model(inputs, None, infer_on_crops=True)
-            pred_instances = pred_instances[pred_instances.pred_classes!=cluster_class]
-            all_outputs = [{"instances": pred_instances}]
-            
+            orig_image_size = (inputs[0].get("height"), inputs[0].get("width"))
+            outputs = model(inputs, orig_image_size, infer_on_crops=True)          
             #if idx%100==0:
             #    plot_detections(pred_instances.to("cpu"), cluster_boxes, inputs[0], evaluator._metadata, cfg, iter)
             if torch.cuda.is_available():
@@ -97,7 +81,7 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
             total_compute_time += time.perf_counter() - start_compute_time
 
             start_eval_time = time.perf_counter()
-            evaluator.process(inputs, all_outputs)
+            evaluator.process(inputs, outputs)
             total_eval_time += time.perf_counter() - start_eval_time
 
             iters_after_start = idx + 1 - num_warmup * int(idx >= num_warmup)

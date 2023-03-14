@@ -100,6 +100,7 @@ def load_visdrone_instances(dataset_name, data_dir, cfg, is_train, extra_annotat
         image_id = record["image_id"] = img_dict["id"]
         record["full_image"] = True
         record["two_stage_crop"] = False
+        record["need_cropping"] = False
         record["crop_area"] = np.array([-1, -1, -1, -1], dtype=np.float32)
 
         objs = []

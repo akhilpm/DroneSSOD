@@ -1,7 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 from multiprocessing import connection
 import os
-from croptrain.engine.inference_tile import inference_dota
 import time
 import logging
 import torch
@@ -29,7 +28,6 @@ from detectron2.data import MetadataCatalog
 from detectron2.evaluation import DatasetEvaluator, print_csv_format
 from contextlib import ExitStack, contextmanager
 from utils.plot_utils import plot_detections
-from croptrain.engine.inference import inference_with_crops
 from croptrain.engine import inference_fcos
 from croptrain.data.build import (
     build_detection_semisup_train_loader,
@@ -41,6 +39,9 @@ from croptrain.engine.hooks import LossEvalHook
 from croptrain.modeling.meta_arch.ts_ensemble import EnsembleTSModel
 from croptrain.checkpoint.detection_checkpoint import DetectionTSCheckpointer
 from croptrain.solver.build import build_lr_scheduler
+from croptrain.engine.inference_tile import get_dict_from_crops
+from utils.box_utils import bbox_inside
+from croptrain.data.detection_utils import read_image
 from utils.plot_utils import plot_pseudo_gt_boxes
 from detectron2.data.build import get_detection_dataset_dicts
 from comet_ml import Experiment
@@ -282,10 +283,7 @@ class BaselineTrainer(DefaultTrainer):
             if "dota" in cfg.DATASETS.TEST[0]:
                 results_i = inference_dota(model, data_loader, evaluator, cfg, iter)
             else:
-                if cfg.MODEL.META_ARCHITECTURE[-4:]=="FCOS":
-                    results_i = inference_fcos.inference_with_crops(model, data_loader, evaluator, cfg, iter)
-                else:
-                    results_i = inference_with_crops(model, data_loader, evaluator, cfg, iter)
+                results_i = inference_fcos.inference_with_crops(model, data_loader, evaluator, cfg, iter)
             results[dataset_name] = results_i
             if comm.is_main_process():
                 assert isinstance(
@@ -880,54 +878,3 @@ class UBTeacherTrainer(DefaultTrainer):
         if len(crops) > 0: 
             crops = np.vstack(crops)        
         return crops, crop_dicts
-
-
-    def get_weak_strong_dicts(self, crops, input_dict, inner_crop=False):
-        """ 
-            Given a set of density crops, select the GT boxes inside and returns the cropped region as an augmented image
-            with the GT boxes inside it as the target locations.
-            crops: The density crops in this image: shape N*4. 
-            input_dict: The dict of this image with the GT boxes in it.
-        """
-        crops = project_boxes_to_image(input_dict, crops)
-        if isinstance(crops, Instances):
-            crop_scores = crops.scores.cpu().numpy().astype(np.int32)        
-            crops = crops.gt_boxes.tensor.cpu().numpy().astype(np.int32)
-        score_sort_index = crop_scores.argsort()[::-1]
-        crop_dicts_weak = []
-        crop_dicts_strong = []
-        for i in range(min(len(crops), 5)):
-            curr_crop = crops[score_sort_index[i]]
-            x1, y1, x2, y2 = curr_crop[0], curr_crop[1], curr_crop[2], curr_crop[3]
-            #ref_point = torch.tensor([x1, y1, x1, y1]).to(gt_instances.gt_boxes.device)
-            crop_size_min = min(x2-x1, y2-y1)
-            if crop_size_min<=0:
-                continue
-            crop_dict = copy.deepcopy(input_dict)
-            crop_dict['full_image'] = False
-            crop_dict["height"] = (y2-y1)
-            crop_dict["width"] = (x2-x1)
-            if inner_crop:
-                crop_dict["two_stage_crop"] = True
-                crop_dict["inner_crop_area"] = np.array([x1, y1, x2, y2]).astype(np.int32)
-            else:    
-                crop_dict['crop_area'] = np.array([x1, y1, x2, y2]).astype(np.int32)
-            crop_dict_strong, crop_dict_weak = self.mapper(crop_dict)
-            crop_dicts_weak.append(crop_dict_weak)
-            crop_dicts_strong.append(crop_dict_strong)
-        return crop_dicts_weak, crop_dicts_strong
-
-def project_boxes_to_image(data_dict, crops):
-    crops_this_image = copy.deepcopy(crops)
-    output_height, output_width = data_dict.get("height"), data_dict.get("width")
-    new_size = (output_height, output_width)
-    img_sizes = crops.image_size
-    scale_x, scale_y = (
-        output_width / img_sizes[1],
-        output_height / img_sizes[0],
-    )
-    boxes = Boxes(crops_this_image.gt_boxes.tensor)
-    boxes.scale(scale_x, scale_y)
-    boxes.clip(new_size)
-    crops_this_image.gt_boxes = boxes
-    return crops_this_image

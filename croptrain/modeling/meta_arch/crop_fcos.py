@@ -14,7 +14,7 @@ from detectron2.modeling.backbone import Backbone
 from detectron2.modeling.backbone import build_backbone
 from detectron2.layers import ShapeSpec, batched_nms
 from detectron2.modeling.postprocessing import detector_postprocess
-from utils.crop_utils import project_boxes_to_image
+from utils.crop_utils import project_boxes_to_image, get_dict_from_crops
 
 
 @META_ARCH_REGISTRY.register()
@@ -30,9 +30,11 @@ class CROP_FCOS(FCOS):
         pixel_mean: Tuple[float],
         pixel_std: Tuple[float],
         max_detections_per_image: int,
+        crop_size: int,
     ):  
         super().__init__(backbone=backbone, head=heads, head_in_features=head_in_features, num_classes=num_classes,
             max_detections_per_image=max_detections_per_image, pixel_mean=pixel_mean, pixel_std=pixel_std)
+        self.CROPSIZE = crop_size    
 
 
     @classmethod
@@ -49,15 +51,16 @@ class CROP_FCOS(FCOS):
             "pixel_mean": cfg.MODEL.PIXEL_MEAN,
             "pixel_std": cfg.MODEL.PIXEL_STD,
             "max_detections_per_image": cfg.TEST.DETECTIONS_PER_IMAGE,
+            "crop_size": cfg.CROPTEST.CROPSIZE,
         }
 
 
     def forward(self, batched_inputs: List[Dict[str, Tensor]],
-        cluster_inputs: Optional[List[Dict[str, torch.Tensor]]] = None,
+        orig_image_size: Optional[Tuple[int]] = None,
         infer_on_crops: bool = False,
     ):
         if infer_on_crops:
-            return self.infer_on_image_and_crops(batched_inputs, cluster_inputs)
+            return self.infer_on_image_and_crops(batched_inputs, orig_image_size, self.CROPSIZE)
 
         images = self.preprocess_image(batched_inputs)
         features = self.backbone(images.tensor)
@@ -84,10 +87,11 @@ class CROP_FCOS(FCOS):
                 processed_results.append({"instances": r})
             return processed_results
 
-    def infer_on_image_and_crops(self, input_dicts, cluster_dicts):
-        assert len(input_dicts)==1, "Only one image per inference is supported!"
-        assert not self.training 
-
+    def infer_on_image_and_crops(self, input_dicts, orig_image_size, CROPSIZE=512):
+        assert not self.training
+        all_preds: List[Instances] = []
+        same_image = all(x["file_name"]==input_dicts[0]["file_name"] for x in input_dicts)
+        assert same_image,  "Only one image per inference is supported!"
         images = self.preprocess_image(input_dicts)
         features = self.backbone(images.tensor)
         features = [features[f] for f in self.head_in_features]
@@ -97,15 +101,29 @@ class CROP_FCOS(FCOS):
             predictions, [self.num_classes, 4, 1]
         )
         anchors = self.anchor_generator(features)
-        scores_per_image = [torch.sqrt(x[0].sigmoid_() * y[0].sigmoid_()) for  x, y in zip(pred_logits, pred_centerness)]
-        deltas_per_image = [x[0] for x in pred_anchor_deltas]
-        pred = self._decode_multi_level_predictions(anchors, scores_per_image, deltas_per_image, 
-            self.test_score_thresh, self.test_topk_candidates, images.image_sizes[0])
-        pred.pred_boxes.tensor = project_boxes_to_image(input_dicts[0], images.image_sizes[0], pred.pred_boxes.tensor)
-        all_preds = [pred]        
+        for img_idx, image_size in enumerate(images.image_sizes):
+            scores_per_image = [torch.sqrt(x[img_idx].sigmoid_() * y[img_idx].sigmoid_()) 
+                for  x, y in zip(pred_logits, pred_centerness)]
+            deltas_per_image = [x[img_idx] for x in pred_anchor_deltas]
+            pred = self._decode_multi_level_predictions(anchors, scores_per_image, deltas_per_image, 
+                self.test_score_thresh, self.test_topk_candidates, orig_image_size)
+            pred.pred_boxes.tensor = project_boxes_to_image(input_dicts[img_idx], image_size, pred.pred_boxes.tensor)
+            all_preds.append(pred)
         del features
+        full_image_pred = Instances.cat(all_preds)
+        keep = batched_nms(
+            full_image_pred.pred_boxes.tensor, full_image_pred.scores, 
+            full_image_pred.pred_classes, self.test_nms_thresh
+        )
+        full_image_pred = full_image_pred[keep]
+        #extract cluster boxes
+        cluster_class = self.num_classes-1
+        cluster_class_indices = (full_image_pred.pred_classes==cluster_class)
+        cluster_boxes = full_image_pred[cluster_class_indices]
+        cluster_boxes = cluster_boxes[cluster_boxes.scores>0.7]
 
-        if cluster_dicts:
+        if len(cluster_boxes)!=0:
+            cluster_dicts = get_dict_from_crops(cluster_boxes, input_dicts[0], CROPSIZE)
             images_crop = self.preprocess_image(cluster_dicts)
             features_crop = self.backbone(images_crop.tensor)
             features_crop = [features_crop[f] for f in self.head_in_features]
@@ -125,7 +143,7 @@ class CROP_FCOS(FCOS):
                 deltas_per_crop = [x[img_idx] for x in pred_anchor_deltas]
                 # use original image size for pred instances on crop to facilitate concatenation
                 pred_crop = self._decode_multi_level_predictions(anchors_crop, scores_per_crop, deltas_per_crop, 
-                    self.test_score_thresh, self.test_topk_candidates, images.image_sizes[0])
+                    self.test_score_thresh, self.test_topk_candidates, orig_image_size)
                 pred_crop.pred_boxes.tensor = project_boxes_to_image(cluster_dicts[img_idx], image_size, pred_crop.pred_boxes.tensor)
                 all_preds.append(pred_crop)
             del features_crop    
@@ -134,8 +152,10 @@ class CROP_FCOS(FCOS):
         keep = batched_nms(
             all_preds.pred_boxes.tensor, all_preds.scores, all_preds.pred_classes, self.test_nms_thresh
         )
-        return all_preds[keep[: self.max_detections_per_image]]
-
+        all_preds = all_preds[keep[: self.max_detections_per_image]]
+        all_preds = all_preds[all_preds.pred_classes!=cluster_class]
+        results = [{"instances": all_preds}]
+        return results
 
 
 
