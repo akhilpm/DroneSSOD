@@ -106,7 +106,7 @@ def compute_crops(data_dict, cfg, cluster_id=10, inner_crop=False):
     new_data_dicts = []
     gt_boxes = np.vstack([obj['bbox'] for obj in data_dict_this_image["annotations"]])
     scaled_boxes = bbox_scale(gt_boxes.copy(), data_dict_this_image['height'], data_dict_this_image['width'])
-    inside_flag = np.ones(len(data_dict['annotations'])).astype(np.bool8)
+    #inside_flag = np.ones(len(data_dict['annotations'])).astype(np.bool8)
     seg_areas = Boxes(gt_boxes).area()
 
     #stage 1 - merging
@@ -135,7 +135,7 @@ def compute_crops(data_dict, cfg, cluster_id=10, inner_crop=False):
         for j, obj in enumerate(data_dict_crop['annotations']):
             obj['bbox'] = list(isect_boxes[j] - ref_point)
         new_data_dicts.append(data_dict_crop)
-        inside_flag &= (~cluster_components)
+        #inside_flag &= (~cluster_components)
 
     #finally change the original datadict by adding new cluster classes and the corresponding boxes
     #if inside_flag.sum()!=0:

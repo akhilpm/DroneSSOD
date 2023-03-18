@@ -45,7 +45,7 @@ def divide_label_unlabel(dataset_dicts, cfg):
     shuffled_images = [random_perm_data["imagenames"][x] for x in random_perm]   
     labeled_image_ids = shuffled_images[:num_label]
     if cfg.SEMISUPNET.AUG_CROPS_UNSUP:
-        crop_file = os.path.join("dataseed", dataset_name + "_crops_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
+        crop_file = os.path.join("dataseed", dataset_name + "_crops_algo_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
         with open(crop_file) as f:
             crop_data = json.load(f)
     label_dicts = []
@@ -223,7 +223,6 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
 
     label_dataset = DatasetFromList(label_dicts, copy=False)
     unlabel_dataset = DatasetFromList(unlabel_dicts, copy=False)
-    print("Labeled samples:{}, Unlabeled samples:{} ".format(len(label_dicts), len(unlabel_dicts)))
     if mapper is None:
         if cfg.CROPTRAIN.USE_CROPS:
             mapper = DatasetMapperTwoCropSeparate(cfg, True)
