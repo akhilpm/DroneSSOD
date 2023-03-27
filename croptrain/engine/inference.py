@@ -89,7 +89,7 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
             if len(cluster_boxes)!=0:
                 #cluster_boxes = merge_cluster_boxes(cluster_boxes, cfg)
                 cluster_dicts = get_dict_from_crops(cluster_boxes, inputs[0], cfg.CROPTEST.CROPSIZE)
-                boxes, scores = model(inputs, cluster_dicts, infer_on_crops=True)
+                boxes, scores = model(inputs, cluster_inputs=cluster_dicts, infer_on_crops=True)
             else:
                 boxes, scores = model(inputs, None, infer_on_crops=True)
             pred_instances, _ = fast_rcnn_inference(boxes, scores, image_shapes, cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST, \

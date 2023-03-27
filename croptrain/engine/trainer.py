@@ -665,24 +665,6 @@ class UBTeacherTrainer(DefaultTrainer):
         self.optimizer.step()
 
 
-    def filter_gt_instances(self, gt_instances):
-        filtered_gt_instances = []
-        for instance in gt_instances:
-            sel_index = instance.scores.argsort(descending=True)[:15]
-            image_shape = instance.image_size
-            new_proposal_inst = Instances(image_shape)
-            #filter the boxes first
-            new_bbox_loc = instance.gt_boxes.tensor[sel_index, :]
-            new_boxes = Boxes(new_bbox_loc)
-
-            # add boxes to instances
-            new_proposal_inst.gt_boxes = new_boxes
-            new_proposal_inst.gt_classes = instance.gt_classes[sel_index]
-            new_proposal_inst.scores = instance.scores[sel_index]
-            filtered_gt_instances.append(new_proposal_inst)
-        return filtered_gt_instances
-
-
     def _write_metrics(self, metrics_dict: dict):
         metrics_dict = {
             k: v.detach().cpu().item() if isinstance(v, torch.Tensor) else float(v)
@@ -881,53 +863,3 @@ class UBTeacherTrainer(DefaultTrainer):
             crops = np.vstack(crops)        
         return crops, crop_dicts
 
-
-    def get_weak_strong_dicts(self, crops, input_dict, inner_crop=False):
-        """ 
-            Given a set of density crops, select the GT boxes inside and returns the cropped region as an augmented image
-            with the GT boxes inside it as the target locations.
-            crops: The density crops in this image: shape N*4. 
-            input_dict: The dict of this image with the GT boxes in it.
-        """
-        crops = project_boxes_to_image(input_dict, crops)
-        if isinstance(crops, Instances):
-            crop_scores = crops.scores.cpu().numpy().astype(np.int32)        
-            crops = crops.gt_boxes.tensor.cpu().numpy().astype(np.int32)
-        score_sort_index = crop_scores.argsort()[::-1]
-        crop_dicts_weak = []
-        crop_dicts_strong = []
-        for i in range(min(len(crops), 5)):
-            curr_crop = crops[score_sort_index[i]]
-            x1, y1, x2, y2 = curr_crop[0], curr_crop[1], curr_crop[2], curr_crop[3]
-            #ref_point = torch.tensor([x1, y1, x1, y1]).to(gt_instances.gt_boxes.device)
-            crop_size_min = min(x2-x1, y2-y1)
-            if crop_size_min<=0:
-                continue
-            crop_dict = copy.deepcopy(input_dict)
-            crop_dict['full_image'] = False
-            crop_dict["height"] = (y2-y1)
-            crop_dict["width"] = (x2-x1)
-            if inner_crop:
-                crop_dict["two_stage_crop"] = True
-                crop_dict["inner_crop_area"] = np.array([x1, y1, x2, y2]).astype(np.int32)
-            else:    
-                crop_dict['crop_area'] = np.array([x1, y1, x2, y2]).astype(np.int32)
-            crop_dict_strong, crop_dict_weak = self.mapper(crop_dict)
-            crop_dicts_weak.append(crop_dict_weak)
-            crop_dicts_strong.append(crop_dict_strong)
-        return crop_dicts_weak, crop_dicts_strong
-
-def project_boxes_to_image(data_dict, crops):
-    crops_this_image = copy.deepcopy(crops)
-    output_height, output_width = data_dict.get("height"), data_dict.get("width")
-    new_size = (output_height, output_width)
-    img_sizes = crops.image_size
-    scale_x, scale_y = (
-        output_width / img_sizes[1],
-        output_height / img_sizes[0],
-    )
-    boxes = Boxes(crops_this_image.gt_boxes.tensor)
-    boxes.scale(scale_x, scale_y)
-    boxes.clip(new_size)
-    crops_this_image.gt_boxes = boxes
-    return crops_this_image

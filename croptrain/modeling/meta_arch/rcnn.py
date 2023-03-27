@@ -112,7 +112,7 @@ class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
                 proposals_crop, _ = self.proposal_generator(images_crop, features_crop, None)
                 #get detections from crop and project it to wrt to original image size
                 boxes_crop, scores_crop = self.get_box_predictions(features_crop, proposals_crop)
-                boxes_crop = project_boxes_to_image(cluster_dict, images_crop.image_sizes[0], boxes_crop[0])
+                boxes_crop = project_boxes_to_image(cluster_dict, images_crop.image_sizes[0], boxes_crop[0])            
                 boxes[0] = torch.cat([boxes[0], boxes_crop], dim=0)
                 scores[0] = torch.cat([scores[0], scores_crop[0]], dim=0)
         return boxes, scores
