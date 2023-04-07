@@ -81,7 +81,7 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
             outputs = model(inputs)
             cluster_class_indices = (outputs[0]["instances"].pred_classes==cluster_class)
             cluster_boxes = outputs[0]["instances"][cluster_class_indices]
-            cluster_boxes = cluster_boxes[cluster_boxes.scores>0.7]
+            cluster_boxes = cluster_boxes[cluster_boxes.scores>0.6]
 
             #_, clus_dicts = compute_crops(dataset_dicts[idx], cfg)
             #cluster_boxes = np.array([item['crop_area'] for item in clus_dicts]).reshape(-1, 4)

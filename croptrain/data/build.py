@@ -74,6 +74,23 @@ def divide_label_unlabel(dataset_dicts, cfg):
     return label_dicts, unlabel_dicts
 
 
+def fetch_crops_cross_dataset(cfg, imageset_name, dataset_dicts):
+    dataset_name = cfg.DATASETS.TRAIN[0].split("_")[0]
+    image_set = imageset_name.split("_")[-1]
+    unlabel_dicts = []
+    crop_file = os.path.join("dataseed", dataset_name + "_crops_algo_{}.txt".format(image_set))
+    with open(crop_file) as f:
+        crop_data = json.load(f)
+    for i in range(len(dataset_dicts)):
+        file_name = dataset_dicts[i]["file_name"].split('/')[-1]
+        crop_boxes = np.array(crop_data[file_name])
+        if len(crop_boxes)>0:
+            crop_dicts = get_dict_from_crops(crop_boxes, dataset_dicts[i], with_image=False)
+            unlabel_dicts += crop_dicts
+    return dataset_dicts + unlabel_dicts
+
+
+
 def divide_label_unlabel_supervised(dataset_dicts, cfg):
     num_all = len(dataset_dicts)
     num_label = int(cfg.DATALOADER.SUP_PERCENT/100.0*num_all)
@@ -193,6 +210,8 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
             if cfg.MODEL.LOAD_PROPOSALS
             else None,
         )
+        cfg.defrost()
+        cfg.CROPTRAIN.USE_CROPS = False
         unlabel_dicts = get_detection_dataset_dicts(
             cfg.DATASETS.TRAIN_UNLABEL,
             filter_empty=False,
@@ -203,6 +222,11 @@ def build_detection_semisup_train_loader_two_crops(cfg, mapper=None):
             if cfg.MODEL.LOAD_PROPOSALS
             else None,
         )
+        cfg.CROPTRAIN.USE_CROPS = True
+        cfg.freeze()
+        if cfg.SEMISUPNET.AUG_CROPS_UNSUP:
+            unlabel_dicts = fetch_crops_cross_dataset(cfg, cfg.DATASETS.TRAIN_UNLABEL[0], unlabel_dicts)
+
     else:  # different degree of supervision (e.g., COCO-supervision)
         dataset_dicts = get_detection_dataset_dicts(
             cfg.DATASETS.TRAIN,

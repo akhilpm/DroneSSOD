@@ -53,7 +53,7 @@ def load_visdrone_instances(dataset_name, data_dir, cfg, is_train, extra_annotat
             cat_ids.append(11)
         # The categories in a custom json file may not be sorted.
         thing_classes = [c["name"] for c in sorted(cats, key=lambda x: x["id"])]
-        meta.set(thing_classes=thing_classes)
+        #meta.set(thing_classes=thing_classes)
         
 
         # In COCO, certain category ids are artificially removed,
@@ -71,7 +71,7 @@ def load_visdrone_instances(dataset_name, data_dir, cfg, is_train, extra_annotat
                     """
                 )
         id_map = {v: i for i, v in enumerate(cat_ids)}
-        meta.set(thing_dataset_id_to_contiguous_id=id_map)
+        #meta.set(thing_dataset_id_to_contiguous_id=id_map)
         
     # sort indices for reproducible results
     img_ids = sorted(coco_api.imgs.keys())

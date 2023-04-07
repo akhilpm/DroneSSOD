@@ -121,11 +121,12 @@ def main():
     cfg.merge_from_file(os.path.join('/home/akhil135/PhD/DroneSSOD', 'configs', 'visdrone', 'Semi-Sup-RCNN-FPN-CROP.yaml'))
     if cfg.CROPTRAIN.USE_CROPS:
         cfg.MODEL.ROI_HEADS.NUM_CLASSES += 1
-        cfg.MODEL.RETINANET.NUM_CLASSES += 1
     data_dir = os.path.join(os.environ['SLURM_TMPDIR'], "VisDrone")
     dataset_name = cfg.DATASETS.TRAIN[0]
-    cfg.OUTPUT_DIR = "/home/akhil135/scratch/DroneSSOD/FPN_CROP_SS_5"
-    cfg.MODEL.WEIGHTS = "/home/akhil135/scratch/DroneSSOD/FPN_CROP_SS_5/model_0047999.pth"
+    cfg.OUTPUT_DIR = "/home/akhil135/scratch/DroneSSOD/FPN_CROP_SS_1"
+    #cfg.MODEL.WEIGHTS = "/home/akhil135/scratch/DroneSSOD/FPN_CROP_SS_5/model_0047999.pth" # mAP = 22.52
+    cfg.MODEL.WEIGHTS = "/home/akhil135/scratch/DroneSSOD/FPN_CROP_SS_1_07/model_0062999.pth" # mAP= 16.74
+    #cfg.MODEL.WEIGHTS = "/home/akhil135/scratch/DroneSSOD/FPN_CROP_SS_10_06/model_0071999.pth" # mAP = 26.48
     if not dataset_name in DatasetCatalog:
         register_visdrone(dataset_name, data_dir, cfg, False)
     if cfg.SEMISUPNET.USE_SEMISUP:

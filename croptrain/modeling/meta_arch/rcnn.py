@@ -103,7 +103,7 @@ class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
         boxes, scores = self.get_box_predictions(features_original, proposals_original)
         num_bbox_reg_classes = boxes[0].shape[1] // 4
         boxes[0] = project_boxes_to_image(input_dicts[0], images_original.image_sizes[0], boxes[0])
-        del features_original
+        del features_original, images_original
 
         if cluster_dicts:
             for i, cluster_dict in enumerate(cluster_dicts):
@@ -115,4 +115,5 @@ class TwoStagePseudoLabGeneralizedRCNN(GeneralizedRCNN):
                 boxes_crop = project_boxes_to_image(cluster_dict, images_crop.image_sizes[0], boxes_crop[0])            
                 boxes[0] = torch.cat([boxes[0], boxes_crop], dim=0)
                 scores[0] = torch.cat([scores[0], scores_crop[0]], dim=0)
+                del images_crop, features_crop        
         return boxes, scores

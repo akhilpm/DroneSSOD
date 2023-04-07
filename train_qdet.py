@@ -6,15 +6,11 @@ import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.engine import default_argument_parser, default_setup, launch
-from detectron2.modeling import GeneralizedRCNN
 
-from croptrain import add_croptrainer_config, add_ubteacher_config
-from croptrain.engine.trainer import UBTeacherTrainer, BaselineTrainer
+from croptrain.config import add_ubteacher_config, add_querydet_config, add_croptrainer_config
+from croptrain.engine.trainer_qdet import UBTeacherTrainer, BaselineTrainer
 # hacky way to register
-from croptrain.modeling.proposal_generator.rpn import PseudoLabRPN
-from croptrain.modeling.meta_arch.crop_rcnn import CropRCNN
-from croptrain.modeling.meta_arch.rcnn import TwoStagePseudoLabGeneralizedRCNN
-from croptrain.modeling.roi_heads.roi_heads import StandardROIHeadsPseudoLab
+from croptrain.modeling.meta_arch.query_det.detector import QueryDet
 import croptrain.data.datasets.builtin
 from croptrain.data.datasets.visdrone import register_visdrone
 from croptrain.data.datasets.dota import register_dota
@@ -28,6 +24,7 @@ def setup(args):
     """
     cfg = get_cfg()
     add_croptrainer_config(cfg)
+    add_querydet_config(cfg)
     add_ubteacher_config(cfg)
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
@@ -47,24 +44,16 @@ def main(args):
     else:
         Trainer = BaselineTrainer
 
-    if cfg.CROPTRAIN.USE_CROPS:
-        cfg.defrost()
-        cfg.MODEL.ROI_HEADS.NUM_CLASSES += 1
-        cfg.freeze()
     if "visdrone" in cfg.DATASETS.TRAIN[0] or "visdrone" in cfg.DATASETS.TEST[0]:
         data_dir = os.path.join(os.environ['SLURM_TMPDIR'], "VisDrone")
         if not args.eval_only:
-            for dataset_name in cfg.DATASETS.TRAIN:
-                register_visdrone(dataset_name, data_dir, cfg, True)
-        for dataset_name in cfg.DATASETS.TEST:
-            register_visdrone(dataset_name, data_dir, cfg, False)
+            register_visdrone(cfg.DATASETS.TRAIN[0], data_dir, cfg, True)
+        register_visdrone(cfg.DATASETS.TEST[0], data_dir, cfg, False)
     if "dota" in cfg.DATASETS.TRAIN[0] or "dota" in cfg.DATASETS.TEST[0]:
         data_dir = os.path.join(os.environ['SLURM_TMPDIR'], "DOTA")
         if not args.eval_only:
-            for dataset_name in cfg.DATASETS.TRAIN:
-                register_dota(dataset_name, data_dir, cfg, True)
-        for dataset_name in cfg.DATASETS.TEST:
-            register_dota(dataset_name, data_dir, cfg, False)
+            register_dota(cfg.DATASETS.TRAIN[0], data_dir, cfg, True)
+        register_dota(cfg.DATASETS.TEST[0], data_dir, cfg, False)
 
     if args.eval_only:
         if cfg.SEMISUPNET.USE_SEMISUP:
@@ -75,26 +64,13 @@ def main(args):
             DetectionCheckpointer(
                 ensem_ts_model, save_dir=cfg.OUTPUT_DIR
             ).resume_or_load(cfg.MODEL.WEIGHTS, resume=args.resume)
-            #res = Trainer.test(cfg, ensem_ts_model.modelTeacher)
-            if cfg.CROPTRAIN.USE_CROPS:
-                res = Trainer.test_crop(cfg, ensem_ts_model.modelTeacher, 0)
-            else:
-                if "dota" in cfg.DATASETS.TEST[0]:
-                    res = Trainer.test_crop(cfg, ensem_ts_model.modelTeacher, 0)
-                else:
-                    res = Trainer.test(cfg, ensem_ts_model.modelTeacher)
+            res = Trainer.test(cfg, ensem_ts_model.modelTeacher)
         else:
             model = Trainer.build_model(cfg)
             DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
                 cfg.MODEL.WEIGHTS, resume=args.resume
             )
-            if cfg.CROPTRAIN.USE_CROPS:
-                res = Trainer.test_crop(cfg, model, 0)
-            else:
-                if "dota" in cfg.DATASETS.TEST[0]:
-                    res = Trainer.test_crop(cfg, model, 0)
-                else:
-                    res = Trainer.test(cfg, model)
+            res = Trainer.test(cfg, model)
         return res
 
     trainer = Trainer(cfg)
