@@ -102,6 +102,7 @@ def load_visdrone_instances(dataset_name, data_dir, cfg, is_train, extra_annotat
         record["two_stage_crop"] = False
         record["need_cropping"] = False
         record["crop_area"] = np.array([-1, -1, -1, -1], dtype=np.float32)
+        record["inner_crop_area"] = np.array([-1, -1, -1, -1], dtype=np.float32)
 
         objs = []
         for anno in anno_dict_list:

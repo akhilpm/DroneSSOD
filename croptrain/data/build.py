@@ -62,7 +62,7 @@ def divide_label_unlabel(dataset_dicts, cfg):
                 if len(crop_boxes)>0:
                     crop_dicts = get_dict_from_crops(crop_boxes, dataset_dicts[i], with_image=False)
                     unlabel_dicts += crop_dicts
-        elif (dataset_dicts[i].get("inner_crop_area")!=None and dataset_dicts[i]["two_stage_crop"]==False):
+        elif (dataset_dicts[i].get("inner_crop_area")<0).all() and dataset_dicts[i]["two_stage_crop"]==False:
             unlabel_dicts.append(dataset_dicts[i])
             if cfg.SEMISUPNET.AUG_CROPS_UNSUP:
                 crop_boxes = np.array(crop_data[file_name])

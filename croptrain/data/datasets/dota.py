@@ -94,7 +94,7 @@ def load_dota_instances(dataset_name, data_dir, cfg, is_train, extra_annotation_
     timer = Timer()
     json_file = PathManager.get_local_path(json_file)
     with contextlib.redirect_stdout(io.StringIO()):
-         coco_api = COCO(json_file)
+        coco_api = COCO(json_file)
     if timer.seconds() > 1:
         logger.info("Loading {} takes {:.2f} seconds.".format(json_file, timer.seconds()))
 
@@ -103,7 +103,7 @@ def load_dota_instances(dataset_name, data_dir, cfg, is_train, extra_annotation_
         cat_ids = sorted(coco_api.getCatIds())
         cats = coco_api.loadCats(cat_ids)
         if cfg.CROPTRAIN.USE_CROPS and is_train:
-            cats.append({'id':16, 'name':'cluster', 'supercategory':'none'})
+            cats.append({'id':16, 'name':'cluster', 'supercategory':'cluster'})
             cat_ids.append(16)
         # The categories in a custom json file may not be sorted.
         thing_classes = [c["name"] for c in sorted(cats, key=lambda x: x["id"])]
