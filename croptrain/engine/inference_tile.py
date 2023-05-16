@@ -1,9 +1,9 @@
 from turtle import width
-from croptrain.data.datasets.dota import get_datadicts_from_sliding_windows, get_sliding_window_patches, get_overlapping_sliding_window
+from croptrain.data.datasets.dota import get_datadicts_from_sliding_windows, get_overlapping_sliding_window
 import numpy as np
 import torch
 from detectron2.evaluation import DatasetEvaluator
-from detectron2.evaluation import COCOEvaluator, verify_results, PascalVOCDetectionEvaluator, DatasetEvaluators
+from detectron2.evaluation import COCOEvaluator, PascalVOCDetectionEvaluator, DatasetEvaluators
 import os
 import datetime
 import time
@@ -78,28 +78,16 @@ def inference_dota(model, data_loader, evaluator, cfg, iter):
             image_shapes = [(dataset_dicts[idx].get("height"), dataset_dicts[idx].get("width"))]
             boxes, scores = torch.zeros(0, cfg.MODEL.ROI_HEADS.NUM_CLASSES*4).to(model.device), torch.zeros(0, cfg.MODEL.ROI_HEADS.NUM_CLASSES+1).to(model.device)
             for data_dict in new_data_dicts:
-                if cfg.CROPTRAIN.USE_CROPS:
-                    outputs = model.inference(batched_inputs=[data_dict])
-                    cluster_class_indices = (outputs[0]["instances"].pred_classes==cluster_class)
-                    cluster_boxes = outputs[0]["instances"][cluster_class_indices]
-                    cluster_boxes = cluster_boxes[cluster_boxes.scores>0.7]
-                else:
-                    cluster_boxes = []
+                boxes_patch, scores_patch = model([data_dict], infer_on_crops=True, cfg=cfg)
                 #_, clus_dicts = compute_crops(dataset_dicts[idx], cfg)
                 #cluster_boxes = np.array([item['crop_area'] for item in clus_dicts]).reshape(-1, 4)
-                
-                if len(cluster_boxes)!=0:
-                    #cluster_boxes = merge_cluster_boxes(cluster_boxes, cfg)
-                    cluster_dicts = get_dict_from_crops(cluster_boxes, data_dict, cfg.CROPTEST.CROPSIZE, inner_crop=True)
-                    boxes_patch, scores_patch = model([data_dict], cluster_inputs=cluster_dicts, infer_on_crops=True)
-                else:
-                    boxes_patch, scores_patch = model([data_dict], None, infer_on_crops=True)
                 boxes = torch.cat([boxes, boxes_patch[0]], dim=0)
                 scores = torch.cat([scores, scores_patch[0]], dim=0)
             pred_instances, _ = fast_rcnn_inference([boxes], [scores], image_shapes, cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST, \
                                     cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST, cfg.CROPTEST.DETECTIONS_PER_IMAGE)
             pred_instances = pred_instances[0]
-            pred_instances = pred_instances[pred_instances.pred_classes!=cluster_class]
+            if cfg.CROPTRAIN.USE_CROPS:
+                pred_instances = pred_instances[pred_instances.pred_classes!=cluster_class]
             all_outputs = [{"instances": pred_instances}]
             
             #if idx%100==0:

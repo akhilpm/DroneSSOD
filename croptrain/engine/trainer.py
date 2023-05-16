@@ -575,6 +575,9 @@ class UBTeacherTrainer(DefaultTrainer):
                     loss_dict[key] = record_dict[key] * 1
             losses = sum(loss_dict.values())
 
+            if (self.iter+1) % self.cfg.TEST.EVAL_PERIOD==0:
+                self._update_teacher_model(keep_rate=0.00)
+
         else:
             if self.iter == self.cfg.SEMISUPNET.BURN_UP_STEP:
                 # update copy the the whole model
@@ -794,8 +797,8 @@ class UBTeacherTrainer(DefaultTrainer):
                     self._last_eval_results_teacher = self.test(self.cfg, self.model_teacher)
             return self._last_eval_results_teacher
 
-        ret.append(hooks.EvalHook(cfg.TEST.EVAL_PERIOD,
-                   test_and_save_results_student))
+        #ret.append(hooks.EvalHook(cfg.TEST.EVAL_PERIOD,
+        #           test_and_save_results_student))
         ret.append(hooks.EvalHook(cfg.TEST.EVAL_PERIOD,
                    test_and_save_results_teacher))
 

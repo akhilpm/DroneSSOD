@@ -2,7 +2,7 @@ from turtle import width
 import numpy as np
 import torch
 from detectron2.evaluation import DatasetEvaluator
-from detectron2.evaluation import COCOEvaluator, verify_results, PascalVOCDetectionEvaluator, DatasetEvaluators
+from detectron2.evaluation import COCOEvaluator, PascalVOCDetectionEvaluator, DatasetEvaluators
 import os
 import datetime
 import time
@@ -15,9 +15,7 @@ from utils.box_utils import bbox_inside_old
 from utils.plot_utils import plot_detections
 from detectron2.utils.logger import log_every_n_seconds
 from utils.box_utils import compute_crops
-from utils.crop_utils import get_dict_from_crops
 from detectron2.data.build import get_detection_dataset_dicts
-from detectron2.modeling.roi_heads.fast_rcnn import fast_rcnn_inference
 logging.basicConfig(level=logging.INFO)
 
 
@@ -77,27 +75,9 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
                 total_eval_time = 0
 
             start_compute_time = time.perf_counter()
-            image_shapes = [(item.get("height"), item.get("width")) for item in inputs]
-            outputs = model(inputs)
-            cluster_class_indices = (outputs[0]["instances"].pred_classes==cluster_class)
-            cluster_boxes = outputs[0]["instances"][cluster_class_indices]
-            cluster_boxes = cluster_boxes[cluster_boxes.scores>0.6]
-
-            #_, clus_dicts = compute_crops(dataset_dicts[idx], cfg)
-            #cluster_boxes = np.array([item['crop_area'] for item in clus_dicts]).reshape(-1, 4)
-            
-            if len(cluster_boxes)!=0:
-                #cluster_boxes = merge_cluster_boxes(cluster_boxes, cfg)
-                cluster_dicts = get_dict_from_crops(cluster_boxes, inputs[0], cfg.CROPTEST.CROPSIZE)
-                boxes, scores = model(inputs, cluster_inputs=cluster_dicts, infer_on_crops=True)
-            else:
-                boxes, scores = model(inputs, None, infer_on_crops=True)
-            pred_instances, _ = fast_rcnn_inference(boxes, scores, image_shapes, cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST, \
-                                    cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST, cfg.CROPTEST.DETECTIONS_PER_IMAGE)
-            pred_instances = pred_instances[0]
-            pred_instances = pred_instances[pred_instances.pred_classes!=cluster_class]
-            all_outputs = [{"instances": pred_instances}]
-            
+            #_, crop_dicts = compute_crops(dataset_dicts[idx], cfg)
+            #crop_boxes = np.array([item['crop_area'] for item in crop_dicts]).reshape(-1, 4)
+            all_outputs = model(inputs, infer_on_crops=True, cfg=cfg)
             #if idx%100==0:
             #    plot_detections(pred_instances.to("cpu"), cluster_boxes, inputs[0], evaluator._metadata, cfg, iter)
             if torch.cuda.is_available():

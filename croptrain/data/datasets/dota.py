@@ -192,7 +192,7 @@ def load_dota_instances(dataset_name, data_dir, cfg, is_train, extra_annotation_
 
     dataset_name = cfg.DATASETS.TRAIN[0].split("_")[0]
     seed_file = os.path.join("dataseed", dataset_name + "_sup_{}.txt".format(cfg.DATALOADER.SUP_PERCENT))
-    if cfg.DATALOADER.USE_RANDOM_SPLIT:
+    if is_train and cfg.DATALOADER.USE_RANDOM_SPLIT:
         # generate a permutation of images
         np.random.seed(cfg.DATALOADER.RANDOM_DATA_SEED)
         random_perm = np.random.permutation(len(file_names)).tolist()
