@@ -29,7 +29,10 @@ def get_dict_from_crops(crops, input_dict, CROPSIZE=512, inner_crop=False, with_
         if with_image:
             crop_region = read_image(crop_dict)
             crop_region = torch.as_tensor(np.ascontiguousarray(crop_region.transpose(2, 0, 1)))
-            crop_region = transform(crop_region)
+            try:
+                crop_region = transform(crop_region)
+            except:
+                continue    
             crop_dict["image"] = crop_region
         crop_dict["height"] = (y2-y1)
         crop_dict["width"] = (x2-x1)

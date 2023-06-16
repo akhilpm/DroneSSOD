@@ -28,6 +28,7 @@ from croptrain.data.common import (
 from croptrain.data.dataset_mapper import DatasetMapperTwoCropSeparate
 from croptrain.data.dataset_mapper import DatasetMapperDensityCrop
 from utils.crop_utils import get_dict_from_crops
+from utils.box_utils import bbox_enclose
 
 """
 This file contains the default logic to build a dataloader for training or testing.
@@ -66,9 +67,11 @@ def divide_label_unlabel(dataset_dicts, cfg):
             unlabel_dicts.append(dataset_dicts[i])
             if cfg.SEMISUPNET.AUG_CROPS_UNSUP:
                 crop_boxes = np.array(crop_data[file_name])
-                if len(crop_boxes)>0:
-                    crop_dicts = get_dict_from_crops(crop_boxes, dataset_dicts[i], with_image=False)
-                    unlabel_dicts += crop_dicts
+                if len(crop_boxes) > 0:
+                    crop_boxes, _ = bbox_enclose(dataset_dicts[i]["crop_area"], crop_boxes)
+                    if len(crop_boxes)>0:
+                        crop_dicts = get_dict_from_crops(crop_boxes, dataset_dicts[i], with_image=False)
+                        unlabel_dicts += crop_dicts
         else:
             continue   
     return label_dicts, unlabel_dicts

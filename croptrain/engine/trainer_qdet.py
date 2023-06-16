@@ -491,7 +491,7 @@ class UBTeacherTrainer(DefaultTrainer):
 
             # input both strong and weak supervised data into model
             label_data_s.extend(label_data_w)
-            record_dict, _, _, _ = self.model(label_data_s)
+            record_dict = self.model(label_data_s)
 
             # weight losses
             loss_dict = {}
@@ -516,7 +516,7 @@ class UBTeacherTrainer(DefaultTrainer):
             # note that we do not convert to eval mode, as 1) there is no gradient computed in
             # teacher model and 2) batch norm layers are not updated as well
             with torch.no_grad():
-                results_unlabeled_data_w = self.model_teacher(unlabel_data_w)
+                results_unlabeled_data_w = self.model_teacher.test(unlabel_data_w)
 
             #  Pseudo-labeling
             cur_threshold = self.cfg.SEMISUPNET.BBOX_THRESHOLD

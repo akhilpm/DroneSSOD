@@ -1,4 +1,3 @@
-from turtle import width
 from croptrain.data.datasets.dota import get_datadicts_from_sliding_windows, get_overlapping_sliding_window
 import numpy as np
 import torch
@@ -12,8 +11,8 @@ from contextlib import ExitStack, contextmanager
 import logging
 from torchvision.transforms import Resize
 from detectron2.structures.instances import Instances
-from utils.box_utils import bbox_inside_old
-from utils.plot_utils import plot_detections
+from utils.box_utils import bbox_enclose
+from utils.plot_utils import plot_detections, plot_detection_boxes
 from detectron2.utils.logger import log_every_n_seconds
 from utils.box_utils import compute_crops
 from utils.crop_utils import get_dict_from_crops
@@ -28,7 +27,7 @@ def prune_boxes_inside_cluster(cluster_dicts, boxes, scores):
     scores = scores[0]
     for cluster_dict in cluster_dicts:
         crop_area = cluster_dict["crop_area"]
-        inside_boxes = bbox_inside_old(crop_area, boxes)
+        inside_boxes = bbox_enclose(crop_area, boxes)
         boxes = boxes[~inside_boxes]
         scores = scores[~inside_boxes]
     return [boxes], [scores]
@@ -90,8 +89,8 @@ def inference_dota(model, data_loader, evaluator, cfg, iter):
                 pred_instances = pred_instances[pred_instances.pred_classes!=cluster_class]
             all_outputs = [{"instances": pred_instances}]
             
-            #if idx%100==0:
-            #    plot_detections(pred_instances.to("cpu"), cluster_boxes, inputs[0], evaluator._metadata, cfg, iter)
+            #if idx%5==0:
+            #    plot_detection_boxes(all_outputs[0]["instances"].to("cpu"), [], inputs[0])
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             total_compute_time += time.perf_counter() - start_compute_time

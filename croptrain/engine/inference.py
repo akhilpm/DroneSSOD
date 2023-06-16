@@ -11,8 +11,8 @@ from contextlib import ExitStack, contextmanager
 import logging
 from torchvision.transforms import Resize
 from detectron2.structures.instances import Instances
-from utils.box_utils import bbox_inside_old
-from utils.plot_utils import plot_detections
+from utils.box_utils import bbox_enclose
+from utils.plot_utils import plot_detections, plot_detection_boxes
 from detectron2.utils.logger import log_every_n_seconds
 from utils.box_utils import compute_crops
 from detectron2.data.build import get_detection_dataset_dicts
@@ -24,7 +24,7 @@ def prune_boxes_inside_cluster(cluster_dicts, boxes, scores, num_classes):
     scores = scores[0].flatten()
     for cluster_dict in cluster_dicts:
         crop_area = cluster_dict["crop_area"]
-        inside_boxes = bbox_inside_old(crop_area, boxes)
+        inside_boxes = bbox_enclose(crop_area, boxes)
         boxes[inside_boxes] = 0.0
         scores[inside_boxes] = 0.0
     boxes = boxes.view(-1, num_classes * 4)
@@ -78,8 +78,8 @@ def inference_with_crops(model, data_loader, evaluator, cfg, iter):
             #_, crop_dicts = compute_crops(dataset_dicts[idx], cfg)
             #crop_boxes = np.array([item['crop_area'] for item in crop_dicts]).reshape(-1, 4)
             all_outputs = model(inputs, infer_on_crops=True, cfg=cfg)
-            #if idx%100==0:
-            #    plot_detections(pred_instances.to("cpu"), cluster_boxes, inputs[0], evaluator._metadata, cfg, iter)
+            #if idx%5==0:
+            #    plot_detection_boxes(all_outputs[0]["instances"].to("cpu"), [], inputs[0])
             if torch.cuda.is_available():
                 torch.cuda.synchronize()
             total_compute_time += time.perf_counter() - start_compute_time
