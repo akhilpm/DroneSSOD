@@ -13,22 +13,19 @@ import copy
 import random
 import datetime
 from itertools import compress
-
+from utils.crop_utils import project_boxes_to_image
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.engine import DefaultTrainer, SimpleTrainer, TrainerBase
 from detectron2.engine.train_loop import AMPTrainer
 from detectron2.utils.events import EventStorage
 from detectron2.evaluation import COCOEvaluator, verify_results, PascalVOCDetectionEvaluator, DatasetEvaluators
-from detectron2.data.dataset_mapper import DatasetMapper
 from detectron2.engine import hooks
 from detectron2.structures.boxes import Boxes
 from detectron2.structures.instances import Instances
 from detectron2.utils.env import TORCH_VERSION
 from detectron2.data import MetadataCatalog
 from detectron2.evaluation import DatasetEvaluator, print_csv_format
-from contextlib import ExitStack, contextmanager
-from utils.plot_utils import plot_detections
 from croptrain.engine.inference import inference_with_crops
 from croptrain.engine import inference_fcos
 from croptrain.data.build import (
@@ -41,10 +38,10 @@ from croptrain.engine.hooks import LossEvalHook
 from croptrain.modeling.meta_arch.ts_ensemble import EnsembleTSModel
 from croptrain.checkpoint.detection_checkpoint import DetectionTSCheckpointer
 from croptrain.solver.build import build_lr_scheduler
-from utils.plot_utils import plot_pseudo_gt_boxes
+from detectron2.structures.boxes import pairwise_iou
 from detectron2.data.build import get_detection_dataset_dicts
 from comet_ml import Experiment
-#experiment = Experiment(api_key="1hcgnVQrXhiriiUepdKOqLlwf", project_name="aerialssod", workspace="akhilpm", log_code=False)
+experiment = Experiment(api_key="1hcgnVQrXhiriiUepdKOqLlwf", project_name="aerialssod", workspace="akhilpm", log_code=False)
 
 
 # Supervised-only Trainer
@@ -615,7 +612,7 @@ class UBTeacherTrainer(DefaultTrainer):
                 proposals_roih_unsup_w, cur_threshold, "roih", "thresholding"
             )
             joint_proposal_dict["proposals_pseudo_roih"] = pesudo_proposals_roih_unsup_w
-            #experiment.log_metric("avg_no_pseudo_gt_boxes", avg_no_pseudo_gt_boxes, step=self.iter)
+            #experiment.log_metric("avg_no_pseudo_gt_boxes", avg_pseudo_gtboxes, step=self.iter)
 
             # add pseudo-label to unlabeled data
 
