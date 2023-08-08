@@ -133,6 +133,7 @@ python train_net.py \
 <p align="center">
 <img src="teaser/dota_results.png" width="95%">
 </p>
+
 ## License
 
-This project is licensed under [MIT License](LICENSE), as found in the LICENSE file.
+This project is licensed under [GPL License](LICENSE), as found in the LICENSE file.
