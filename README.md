@@ -1,6 +1,7 @@
 # Density Crop-guided Semi-supervised Object Detection in Aerial Imges
 
-<img src="teaser/pytorch-logo-dark.png" width="10%"> [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<img src="teaser/pytorch-logo-dark.png" width="10%"> [![License: GPL](https://img.shields.io/badge/Licence-GPL-yellow
+)](https://opensource.org/license/gpl-3-0/)
 
 This is the PyTorch implementation of our paper: <br>
 **Density Crop-guided Semi-supervised Object Detection in Aerial Imges**<br>
