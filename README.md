@@ -6,6 +6,7 @@
 This is the PyTorch implementation of our paper: <br>
 **Density Crop-guided Semi-supervised Object Detection in Aerial Imges**<br>
 Akhil Meethal, Eric Granger, Marco Pedersoli<br>
+[[arXiv](https://arxiv.org/abs/2308.05032)] 
 
 
 <p align="center">
