@@ -45,7 +45,6 @@ from croptrain.data.detection_utils import read_image
 from utils.plot_utils import plot_pseudo_gt_boxes
 from detectron2.data.build import get_detection_dataset_dicts
 from comet_ml import Experiment
-#experiment = Experiment(api_key="1hcgnVQrXhiriiUepdKOqLlwf", project_name="aerialssod", workspace="akhilpm", log_code=False)
 
 
 # Supervised-only Trainer
