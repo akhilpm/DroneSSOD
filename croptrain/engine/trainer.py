@@ -41,7 +41,7 @@ from croptrain.solver.build import build_lr_scheduler
 from detectron2.structures.boxes import pairwise_iou
 from detectron2.data.build import get_detection_dataset_dicts
 from comet_ml import Experiment
-experiment = Experiment(api_key="1hcgnVQrXhiriiUepdKOqLlwf", project_name="aerialssod", workspace="akhilpm", log_code=False)
+experiment = Experiment(api_key="your_key", project_name="your_peoject_name", workspace="your_workspace", log_code=False)
 
 
 # Supervised-only Trainer
